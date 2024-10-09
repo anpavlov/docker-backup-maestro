@@ -76,16 +76,6 @@ func (mngr *ContainerManager) Run(ctx context.Context) error {
 	return <-errChan
 }
 
-func (mngr *ContainerManager) handleDockerEvent(ctx context.Context, event events.Message) error {
-	if event.Action == events.ActionStart {
-		return mngr.createBackuper(ctx, event.Actor.Attributes[labelBackupName])
-	} else if event.Action == events.ActionDie {
-		return mngr.dropBackuper(ctx, event.Actor.Attributes[labelBackupName])
-	}
-
-	return nil
-}
-
 // мы хотим получить список контейнеров, ДЛЯ которых надо делать бекапные контейнеры,
 // а также список самих бекапных контейнеров, чтобы проверить, что все нужные есть, а ненужные выкосить
 func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
@@ -199,11 +189,13 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	}
 
 	backuperCfg.Binds[hostPathToBind] = mngr.conf.Backuper.BindToPath
+	log.Printf("backuper bind %s to %s\n", hostPathToBind, mngr.conf.Backuper.BindToPath)
 
 	for label, value := range cntr.Labels {
 		if strings.HasPrefix(label, labelBackupEnvPrefix) {
 			envName, _ := strings.CutPrefix(label, labelBackupEnvPrefix)
 			backuperCfg.Env[envName] = value
+			log.Printf("Env %s = %s\n", envName, value)
 		}
 	}
 

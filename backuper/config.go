@@ -3,7 +3,6 @@ package backuper
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -11,8 +10,8 @@ import (
 
 type Config struct {
 	Image      string
-	Entrypoint string
-	Command    string
+	Entrypoint []string
+	Command    []string
 	Env        map[string]string
 	Binds      map[string]string
 	Labels     map[string]string
@@ -64,11 +63,11 @@ func (bCfg *Config) CreateConfig() (config *container.Config, hostConfig *contai
 	}
 
 	if len(bCfg.Entrypoint) != 0 {
-		cntrCfg.Entrypoint = strings.Split(bCfg.Entrypoint, " ")
+		cntrCfg.Entrypoint = bCfg.Entrypoint
 	}
 
 	if len(bCfg.Command) != 0 {
-		cntrCfg.Cmd = strings.Split(bCfg.Command, " ")
+		cntrCfg.Cmd = bCfg.Command
 	}
 
 	bindsArr := make([]string, 0, len(bCfg.Binds))

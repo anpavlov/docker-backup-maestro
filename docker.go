@@ -20,6 +20,16 @@ func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label
 	return mngr.docker.ContainerList(ctx, opts)
 }
 
+func (mngr *ContainerManager) handleDockerEvent(ctx context.Context, event events.Message) error {
+	if event.Action == events.ActionStart {
+		return mngr.createBackuper(ctx, event.Actor.Attributes[labelBackupName])
+	} else if event.Action == events.ActionDie {
+		return mngr.dropBackuper(ctx, event.Actor.Attributes[labelBackupName])
+	}
+
+	return nil
+}
+
 func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
 	var opts events.ListOptions
 	opts.Filters = filters.NewArgs()

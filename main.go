@@ -18,7 +18,7 @@ func main() {
 
 	userCfg := &backuper.Config{
 		Image:   "alpine",
-		Command: "cp -pr /data $TARGET",
+		Command: []string{"sh", "-c", "echo $TARGET && cp -pr /data $TARGET"},
 		Binds:   map[string]string{"bvol": "/backup"},
 	}
 
