@@ -1,0 +1,21 @@
+image: alpine
+environment:
+  WEBDAV_URL: ${BACKUP_WEBDAV_URL}
+
+
+
+
+
+maestro-compose:
+
+services:
+  maestro:
+    image: maestro
+    # environment:
+    #   BACKUP_WEBDAV_URL: ${BACKUP_WEBDAV_URL}
+    env_file: .env
+
+
+  
+.env:
+BACKUP_WEBDAV_URL=https://...

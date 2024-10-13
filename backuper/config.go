@@ -1,24 +1,29 @@
 package backuper
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"slices"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"gopkg.in/yaml.v2"
 )
 
-type Config struct {
-	Image      string
-	Entrypoint []string
-	Command    []string
-	Env        map[string]string
-	Binds      map[string]string
-	Labels     map[string]string
-	Networks   []string
+type Template struct {
+	Image       string
+	Entrypoint  []string
+	Command     []string
+	EnvFile     string            `yaml:"env_file"` // TODO:  parse also as slice (as interface)
+	Environment map[string]string // TODO: parse also as slice
+	Volumes     []string
+	Labels      map[string]string
+	Networks    []string
 }
 
-func (bCfg *Config) Overlay(other *Config) {
+func (bCfg *Template) Overlay(other *Template) {
 	if len(other.Image) != 0 {
 		bCfg.Image = other.Image
 	}
@@ -31,12 +36,18 @@ func (bCfg *Config) Overlay(other *Config) {
 		bCfg.Command = other.Command
 	}
 
-	for k, v := range other.Env {
-		bCfg.Env[k] = v
+	for k, v := range other.Environment {
+		bCfg.Environment[k] = v
 	}
 
-	for k, v := range other.Binds {
-		bCfg.Binds[k] = v
+	if len(other.EnvFile) != 0 {
+		bCfg.EnvFile = other.EnvFile
+	}
+
+	for _, v := range other.Volumes {
+		if !slices.Contains(bCfg.Volumes, v) {
+			bCfg.Volumes = append(bCfg.Volumes, v)
+		}
 	}
 
 	for k, v := range other.Labels {
@@ -50,9 +61,33 @@ func (bCfg *Config) Overlay(other *Config) {
 	}
 }
 
-func (bCfg *Config) CreateConfig() (config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig) {
-	envArr := make([]string, 0, len(bCfg.Env))
-	for envName, envVal := range bCfg.Env {
+func (bCfg *Template) CreateConfig() (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+	if len(bCfg.EnvFile) != 0 {
+		f, err := os.Open(bCfg.EnvFile)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("env_file '%s' open error: %w", bCfg.EnvFile, err)
+		}
+
+		defer f.Close()
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			envLine := scanner.Text()
+			envKV := strings.SplitN(envLine, "=", 1)
+			if len(envKV) == 1 {
+				bCfg.Environment[envKV[0]] = ""
+			} else {
+				bCfg.Environment[envKV[0]] = envKV[1]
+			}
+		}
+
+		if scanner.Err() != nil {
+			return nil, nil, nil, fmt.Errorf("env_file '%s' read error: %w", bCfg.EnvFile, scanner.Err())
+		}
+	}
+
+	envArr := make([]string, 0, len(bCfg.Environment))
+	for envName, envVal := range bCfg.Environment {
 		envArr = append(envArr, fmt.Sprintf("%s=%s", envName, envVal))
 	}
 
@@ -70,13 +105,8 @@ func (bCfg *Config) CreateConfig() (config *container.Config, hostConfig *contai
 		cntrCfg.Cmd = bCfg.Command
 	}
 
-	bindsArr := make([]string, 0, len(bCfg.Binds))
-	for bindSrc, bindDst := range bCfg.Binds {
-		bindsArr = append(bindsArr, fmt.Sprintf("%s:%s", bindSrc, bindDst))
-	}
-
 	hostCfg := &container.HostConfig{
-		Binds: bindsArr,
+		Binds: bCfg.Volumes,
 	}
 
 	var netCfg *network.NetworkingConfig
@@ -89,5 +119,23 @@ func (bCfg *Config) CreateConfig() (config *container.Config, hostConfig *contai
 		}
 	}
 
-	return cntrCfg, hostCfg, netCfg
+	return cntrCfg, hostCfg, netCfg, nil
+}
+
+func ReadTemplateFromFile(path string) (*Template, error) {
+	tmplData, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("backuper template '%s' read failed: %w", path, err)
+	}
+
+	expandedTmpl := os.ExpandEnv(string(tmplData))
+
+	tmpl := &Template{}
+
+	err = yaml.Unmarshal([]byte(expandedTmpl), tmpl)
+	if err != nil {
+		return nil, fmt.Errorf("backuper template '%s' parsing failed: %w", path, err)
+	}
+
+	return tmpl, nil
 }

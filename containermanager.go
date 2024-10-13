@@ -35,13 +35,13 @@ type dockerApi interface {
 
 type ContainerManager struct {
 	docker      dockerApi
-	backuperCfg *backuper.Config
+	backuperCfg *backuper.Template
 	conf        Config
 	cli         *client.Client
 	initDone    chan struct{}
 }
 
-func NewContainerManager(api dockerApi, userCfg *backuper.Config, conf Config) *ContainerManager {
+func NewContainerManager(api dockerApi, userCfg *backuper.Template, conf Config) *ContainerManager {
 	return &ContainerManager{
 		docker:      api,
 		conf:        conf,
@@ -169,13 +169,13 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 	return nil
 }
 
-func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string) (*backuper.Config, error) {
+func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string) (*backuper.Template, error) {
 	cntr, err := mngr.getBackupContainerByName(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	backuperCfg := &backuper.Config{
+	backuperCfg := &backuper.Template{
 		Labels: map[string]string{
 			labelBackuperName: name,
 		},

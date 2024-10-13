@@ -6,6 +6,7 @@ require golang.org/x/sync v0.8.0
 
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
+	github.com/caarlos0/env/v11 v11.2.2 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker v27.2.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
@@ -23,4 +24,5 @@ require (
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.opentelemetry.io/otel/trace v1.30.0 // indirect
 	golang.org/x/sys v0.1.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
