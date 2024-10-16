@@ -39,7 +39,7 @@ func main() {
 	// 	Binds:   map[string]string{"bvol": "/backup"},
 	// }
 
-	mngr := NewContainerManager(cli, backuperTmpl, restoreTmpl, cfg)
+	mngr := NewContainerManager(cli, UserTemplates{Backuper: backuperTmpl, Restore: restoreTmpl}, cfg)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

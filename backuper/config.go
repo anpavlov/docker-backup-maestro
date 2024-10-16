@@ -2,10 +2,13 @@ package backuper
 
 import (
 	"bufio"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"slices"
 	"strings"
+
+	"crypto/md5"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -21,6 +24,42 @@ type Template struct {
 	Volumes     []string
 	Labels      map[string]string
 	Networks    []string
+}
+
+func (bCfg *Template) Hash() string {
+	hash := md5.New()
+
+	hash.Write([]byte(bCfg.Image))
+
+	for _, elem := range bCfg.Entrypoint {
+		hash.Write([]byte(elem))
+	}
+
+	for _, elem := range bCfg.Command {
+		hash.Write([]byte(elem))
+	}
+
+	hash.Write([]byte(bCfg.EnvFile))
+
+	for k, v := range bCfg.Environment {
+		hash.Write([]byte(k))
+		hash.Write([]byte(v))
+	}
+
+	for _, elem := range bCfg.Volumes {
+		hash.Write([]byte(elem))
+	}
+
+	for k, v := range bCfg.Labels {
+		hash.Write([]byte(k))
+		hash.Write([]byte(v))
+	}
+
+	for _, elem := range bCfg.Networks {
+		hash.Write([]byte(elem))
+	}
+
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func (bCfg *Template) Overlay(other *Template) {

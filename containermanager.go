@@ -11,19 +11,20 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const (
-	labelPrefix          = "docker-backup-maestro"
-	labelBackup          = labelPrefix + ".backup"
-	labelBackupName      = labelPrefix + ".name"
-	labelBackupPath      = labelPrefix + ".path"
-	labelBackupEnvPrefix = labelBackup + ".env."
+	labelPrefix                = "docker-backup-maestro"
+	labelBackup                = labelPrefix + ".backup"
+	labelBackupName            = labelBackup + ".name"
+	labelBackupPath            = labelBackup + ".path"
+	labelBackupNetwork         = labelBackup + ".network"
+	labelBackupEnvPrefix       = labelBackup + ".env."
+	labelBackupConsistencyHash = labelBackup + ".consistencyhash"
 
 	labelBackuper     = labelPrefix + ".backuper"
-	labelBackuperName = labelPrefix + ".backuper.name"
+	labelBackuperName = labelBackuper + ".name"
 )
 
 type dockerApi interface {
@@ -31,22 +32,30 @@ type dockerApi interface {
 	ContainerList(ctx context.Context, options container.ListOptions) ([]types.Container, error)
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
+	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
+}
+
+type UserTemplates struct {
+	Backuper    *backuper.Template
+	Restore     *backuper.Template
+	ForceBackup *backuper.Template
 }
 
 type ContainerManager struct {
-	docker      dockerApi
-	backuperCfg *backuper.Template
-	conf        Config
-	cli         *client.Client
-	initDone    chan struct{}
+	docker dockerApi
+	tmpls  UserTemplates
+	conf   Config
+	// cli      *client.Client
+	initDone chan struct{}
 }
 
-func NewContainerManager(api dockerApi, userCfg *backuper.Template, conf Config) *ContainerManager {
+func NewContainerManager(api dockerApi, userCfg UserTemplates, conf Config) *ContainerManager {
 	return &ContainerManager{
-		docker:      api,
-		conf:        conf,
-		backuperCfg: userCfg,
-		initDone:    make(chan struct{}),
+		docker:   api,
+		conf:     conf,
+		tmpls:    userCfg,
+		initDone: make(chan struct{}),
 	}
 }
 
@@ -79,12 +88,12 @@ func (mngr *ContainerManager) Run(ctx context.Context) error {
 // мы хотим получить список контейнеров, ДЛЯ которых надо делать бекапные контейнеры,
 // а также список самих бекапных контейнеров, чтобы проверить, что все нужные есть, а ненужные выкосить
 func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
-	backupers, err := mngr.listContainersWithLabel(ctx, labelBackuper)
+	backupers, err := mngr.listContainersWithLabel(ctx, labelBackuperName)
 	if err != nil {
 		return err
 	}
 
-	toBackups, err := mngr.listContainersWithLabel(ctx, labelBackup)
+	toBackups, err := mngr.listContainersWithLabel(ctx, labelBackupName)
 	if err != nil {
 		return err
 	}
@@ -133,54 +142,82 @@ func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
 
 func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) error {
 	log.Println("drop backuper")
+
+	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, false)
+	if err != nil {
+		return err
+	}
+
+	err = mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+	if err != nil {
+		return err
+	}
+
+	err = mngr.docker.ContainerRemove(ctx, cntr.ID, container.RemoveOptions{})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) error {
 	log.Println("create backuper")
 
-	backuperCfg, err := mngr.prepareBackuperConfigFor(ctx, name)
+	backuperCfg, err := mngr.prepareBackuperConfigFor(ctx, name, false)
 	if err != nil {
 		return err
 	}
 
-	cntrCfg, hstCfg, netCfg := backuperCfg.CreateConfig()
-	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, "")
-	if err != nil {
-		return err
-	}
+	backuperCfg.Overlay(mngr.tmpls.Backuper)
 
-	cntrId := resp.ID
+	backuperCfg.Labels[labelBackupConsistencyHash] = backuperCfg.Hash()
 
-	for _, warn := range resp.Warnings {
-		log.Println("WARN:", warn)
-	}
-
-	err = mngr.docker.ContainerStart(ctx, cntrId, container.StartOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return mngr.startContainer(ctx, backuperCfg)
 }
 
 func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, backuper types.Container) error {
 	log.Println("sync backuper")
-	return nil
+
+	backupName := toBackup.Labels[labelBackupName]
+
+	// Собрать backuper.Template как будто мы собираемся создавать контейнер, посчитать хэш от итогового темплейта
+	// и сравнить с хэшом запущенного, который записан в служебный лейбл
+
+	backuperCfg, err := mngr.prepareBackuperConfigFor(ctx, backupName, false)
+	if err != nil {
+		return err
+	}
+
+	backuperCfg.Overlay(mngr.tmpls.Backuper)
+
+	hash := backuperCfg.Hash()
+
+	backuperHash := backuper.Labels[labelBackupConsistencyHash]
+
+	if hash == backuperHash {
+		return nil
+	}
+
+	err = mngr.dropBackuper(ctx, backupName)
+	if err != nil {
+		return fmt.Errorf("failed to drop backuper %s: %w", backupName, err)
+	}
+
+	return mngr.createBackuper(ctx, backupName)
 }
 
-func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string) (*backuper.Template, error) {
-	cntr, err := mngr.getBackupContainerByName(ctx, name)
+func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string, rw bool) (*backuper.Template, error) {
+	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, true)
 	if err != nil {
 		return nil, err
 	}
 
-	backuperCfg := &backuper.Template{
+	backuperBaseCfg := &backuper.Template{
 		Labels: map[string]string{
 			labelBackuperName: name,
 		},
-		Env:   map[string]string{},
-		Binds: map[string]string{},
+		Environment: map[string]string{},
 	}
 
 	hostPathToBind := getContainerLabel(cntr, labelBackupPath)
@@ -188,15 +225,25 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 		return nil, fmt.Errorf("could not find path to mount for backup")
 	}
 
-	backuperCfg.Binds[hostPathToBind] = mngr.conf.Backuper.BindToPath
-	log.Printf("backuper bind %s to %s\n", hostPathToBind, mngr.conf.Backuper.BindToPath)
+	bind := fmt.Sprintf("%s:%s", hostPathToBind, mngr.conf.Backuper.BindToPath)
+	if !rw {
+		bind += ":ro"
+	}
+
+	backuperBaseCfg.Volumes = []string{bind}
+	log.Printf("backuper bind %s\n", bind)
 
 	for label, value := range cntr.Labels {
 		if strings.HasPrefix(label, labelBackupEnvPrefix) {
 			envName, _ := strings.CutPrefix(label, labelBackupEnvPrefix)
-			backuperCfg.Env[envName] = value
+			backuperBaseCfg.Environment[envName] = value
 			log.Printf("Env %s = %s\n", envName, value)
 		}
+	}
+
+	networkLabel := getContainerLabel(cntr, labelBackupNetwork)
+	if len(networkLabel) > 0 {
+		backuperBaseCfg.Networks = []string{networkLabel}
 	}
 
 	// TODO получать из backup контейнера по лейблам путь на хосте (или имя volume), который будем маппить внутрь backuper'а
@@ -204,7 +251,79 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	// параметры, как это маппить в backuper - задается конфигом backup-maestro через env. или темплейтим в юзер конфиг?
 	// МОЖНО ПРОКИДЫВАТЬ ЛЮБЫЕ ЭНВЫ по префиксу lable'а backup-maestro.backuper.env.<NAME>
 
-	backuperCfg.Overlay(mngr.backuperCfg)
+	// backuperBaseCfg.Overlay(mngr.tmpls.Backuper)
 
-	return backuperCfg, nil
+	return backuperBaseCfg, nil
+}
+
+func (mngr *ContainerManager) StartRestore(ctx context.Context, name string) error {
+	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.Restore)
+}
+
+func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string) error {
+	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup)
+}
+
+func (mngr *ContainerManager) oneShotContainerFromTmpl(ctx context.Context, name string, tmpl *backuper.Template) error {
+	backuperCntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, false)
+	if err != nil {
+		return err
+	}
+
+	wasRunning := containerIsAlive(backuperCntr)
+
+	err = mngr.docker.ContainerStop(ctx, backuperCntr.ID, container.StopOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to stop backuper container %s %s - %w", name, backuperCntr.ID, err)
+	}
+
+	restoreCfg, err := mngr.prepareBackuperConfigFor(ctx, name, true)
+	if err != nil {
+		return fmt.Errorf("failed to generate config for %s - %w", name, err)
+	}
+
+	restoreCfg.Overlay(tmpl)
+
+	cntrCfg, hstCfg, netCfg, err := restoreCfg.CreateConfig()
+	if err != nil {
+		return err
+	}
+
+	hstCfg.AutoRemove = true
+
+	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, "")
+	if err != nil {
+		return err
+	}
+
+	for _, warn := range resp.Warnings {
+		log.Println("WARN:", warn)
+	}
+
+	cntrId := resp.ID
+
+	errChan := make(chan error)
+	go func() {
+		defer close(errChan)
+		errChan <- mngr.waitForStop(ctx, cntrId)
+	}()
+
+	err = mngr.docker.ContainerStart(ctx, cntrId, container.StartOptions{})
+	if err != nil {
+		return err
+	}
+
+	err = <-errChan
+	if err != nil {
+		return err
+	}
+
+	if wasRunning {
+		err = mngr.docker.ContainerStart(ctx, backuperCntr.ID, container.StartOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to start backuper %s - %w", name, err)
+		}
+	}
+
+	return nil
 }

@@ -4,11 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 
+	"github.com/anpavlov/docker-backup-mastro.git/backuper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
+)
+
+const (
+	ContainerStatusRunning    = "running"
+	ContainerStatusRestarting = "restarting"
 )
 
 func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label string) ([]types.Container, error) {
@@ -86,30 +93,85 @@ func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
 // 	return
 // }
 
-func (mngr *ContainerManager) getBackupContainerByName(ctx context.Context, name string) (res types.Container, err error) {
+func (mngr *ContainerManager) getContainerByLabelValue(ctx context.Context, label, value string, searchAll bool) (*types.Container, error) {
 	var listOpts container.ListOptions
 
 	listOpts.Filters = filters.NewArgs()
-	listOpts.Filters.Add("label", fmt.Sprintf("%s=%s", labelBackupName, name))
+	listOpts.Filters.Add("label", fmt.Sprintf("%s=%s", label, value))
+
+	listOpts.All = searchAll
 
 	cntrs, err := mngr.docker.ContainerList(ctx, listOpts)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	if len(cntrs) != 1 {
-		err = fmt.Errorf("backup container by name returned not 1 containger: %d", len(cntrs))
-		return
+	if len(cntrs) > 1 {
+		return nil, fmt.Errorf("containers with label %s=%s more than 1: %d", label, value, len(cntrs))
 	}
 
-	res = cntrs[0]
-	return
+	if len(cntrs) == 1 {
+		return &cntrs[0], nil
+	}
+
+	return nil, nil
 }
 
-func getContainerLabel(cntr types.Container, label string) string {
+func (mngr *ContainerManager) startContainer(ctx context.Context, cfg *backuper.Template) error {
+	cntrCfg, hstCfg, netCfg, err := cfg.CreateConfig()
+	if err != nil {
+		return err
+	}
+
+	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, "")
+	if err != nil {
+		return err
+	}
+
+	cntrId := resp.ID
+
+	for _, warn := range resp.Warnings {
+		log.Println("WARN:", warn)
+	}
+
+	err = mngr.docker.ContainerStart(ctx, cntrId, container.StartOptions{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) waitForStop(ctx context.Context, cntrId string) error {
+	var opts events.ListOptions
+	opts.Filters = filters.NewArgs()
+	opts.Filters.Add("id", cntrId)
+	opts.Filters.Add("type", "container")
+	opts.Filters.Add("event", "die")
+
+	eventChan, errChan := mngr.docker.Events(ctx, opts)
+
+	select {
+	case _, ok := <-eventChan:
+		if ok {
+			return nil
+		} else {
+			return fmt.Errorf("error during listen for docker events: %w", ctx.Err())
+		}
+
+	case err := <-errChan:
+		return fmt.Errorf("error during listen for docker events: %w", err)
+	}
+}
+
+func getContainerLabel(cntr *types.Container, label string) string {
 	if val, ok := cntr.Labels[label]; ok {
 		return val
 	}
 
 	return ""
+}
+
+func containerIsAlive(cntr *types.Container) bool {
+	return cntr.Status == ContainerStatusRunning || cntr.Status == ContainerStatusRestarting
 }
