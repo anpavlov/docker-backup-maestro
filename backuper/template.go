@@ -3,7 +3,9 @@ package backuper
 import (
 	"bufio"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -27,39 +29,18 @@ type Template struct {
 }
 
 func (bCfg *Template) Hash() string {
-	hash := md5.New()
+	hashMd5 := md5.New()
 
-	hash.Write([]byte(bCfg.Image))
-
-	for _, elem := range bCfg.Entrypoint {
-		hash.Write([]byte(elem))
+	jsonStr, err := json.Marshal(bCfg)
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	for _, elem := range bCfg.Command {
-		hash.Write([]byte(elem))
-	}
+	hashMd5.Write(jsonStr)
 
-	hash.Write([]byte(bCfg.EnvFile))
+	hashHex := hex.EncodeToString(hashMd5.Sum(nil))
 
-	for k, v := range bCfg.Environment {
-		hash.Write([]byte(k))
-		hash.Write([]byte(v))
-	}
-
-	for _, elem := range bCfg.Volumes {
-		hash.Write([]byte(elem))
-	}
-
-	for k, v := range bCfg.Labels {
-		hash.Write([]byte(k))
-		hash.Write([]byte(v))
-	}
-
-	for _, elem := range bCfg.Networks {
-		hash.Write([]byte(elem))
-	}
-
-	return hex.EncodeToString(hash.Sum(nil))
+	return hashHex
 }
 
 func (bCfg *Template) Overlay(other *Template) {

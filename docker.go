@@ -18,11 +18,13 @@ const (
 	ContainerStatusRestarting = "restarting"
 )
 
-func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label string) ([]types.Container, error) {
+func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label string, searchAll bool) ([]types.Container, error) {
 	var opts container.ListOptions
 
 	opts.Filters = filters.NewArgs()
 	opts.Filters.Add("label", label)
+
+	opts.All = searchAll
 
 	return mngr.docker.ContainerList(ctx, opts)
 }
@@ -40,7 +42,7 @@ func (mngr *ContainerManager) handleDockerEvent(ctx context.Context, event event
 func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
 	var opts events.ListOptions
 	opts.Filters = filters.NewArgs()
-	opts.Filters.Add("label", labelBackup)
+	opts.Filters.Add("label", labelBackupName)
 
 	for {
 		eventChan, errChan := mngr.docker.Events(ctx, opts)
@@ -173,5 +175,5 @@ func getContainerLabel(cntr *types.Container, label string) string {
 }
 
 func containerIsAlive(cntr *types.Container) bool {
-	return cntr.Status == ContainerStatusRunning || cntr.Status == ContainerStatusRestarting
+	return cntr != nil && (cntr.Status == ContainerStatusRunning || cntr.Status == ContainerStatusRestarting)
 }

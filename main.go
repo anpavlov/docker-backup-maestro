@@ -33,20 +33,15 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	// userCfg := &backuper.Config{
-	// 	Image:   "alpine",
-	// 	Command: []string{"sh", "-c", "echo $TARGET && cp -pr /data $TARGET"},
-	// 	Binds:   map[string]string{"bvol": "/backup"},
-	// }
-
 	mngr := NewContainerManager(cli, UserTemplates{Backuper: backuperTmpl, Restore: restoreTmpl}, cfg)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	log.Println("Starting")
-	err = mngr.Run(ctx)
+	cmd := NewRootCmd(mngr)
+	err = cmd.ExecuteContext(ctx)
 	if err != nil {
 		log.Fatalln("error while running:", err)
 	}
+
 }

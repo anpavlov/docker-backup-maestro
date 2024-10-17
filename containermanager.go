@@ -88,12 +88,12 @@ func (mngr *ContainerManager) Run(ctx context.Context) error {
 // мы хотим получить список контейнеров, ДЛЯ которых надо делать бекапные контейнеры,
 // а также список самих бекапных контейнеров, чтобы проверить, что все нужные есть, а ненужные выкосить
 func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
-	backupers, err := mngr.listContainersWithLabel(ctx, labelBackuperName)
+	backupers, err := mngr.listContainersWithLabel(ctx, labelBackuperName, true)
 	if err != nil {
 		return err
 	}
 
-	toBackups, err := mngr.listContainersWithLabel(ctx, labelBackupName)
+	toBackups, err := mngr.listContainersWithLabel(ctx, labelBackupName, false)
 	if err != nil {
 		return err
 	}
@@ -143,9 +143,14 @@ func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
 func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) error {
 	log.Println("drop backuper")
 
-	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, false)
+	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackuperName, name, false)
 	if err != nil {
 		return err
+	}
+
+	if cntr == nil {
+		log.Printf("Backuper container for %s not found. Skipping\n", name)
+		return nil
 	}
 
 	err = mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
@@ -164,6 +169,20 @@ func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) err
 func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) error {
 	log.Println("create backuper")
 
+	existingBackuper, err := mngr.getContainerByLabelValue(ctx, labelBackuperName, name, true)
+	if err != nil {
+		return err
+	}
+
+	if existingBackuper != nil {
+		existingBackup, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, true)
+		if err != nil {
+			return err
+		}
+
+		return mngr.updateBackuper(ctx, *existingBackup, *existingBackuper)
+	}
+
 	backuperCfg, err := mngr.prepareBackuperConfigFor(ctx, name, false)
 	if err != nil {
 		return err
@@ -171,7 +190,9 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 
 	backuperCfg.Overlay(mngr.tmpls.Backuper)
 
-	backuperCfg.Labels[labelBackupConsistencyHash] = backuperCfg.Hash()
+	hash := backuperCfg.Hash()
+
+	backuperCfg.Labels[labelBackupConsistencyHash] = hash
 
 	return mngr.startContainer(ctx, backuperCfg)
 }
@@ -211,6 +232,10 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, true)
 	if err != nil {
 		return nil, err
+	}
+
+	if cntr == nil {
+		return nil, fmt.Errorf("backup container '%s' not found", name)
 	}
 
 	backuperBaseCfg := &backuper.Template{
@@ -272,9 +297,11 @@ func (mngr *ContainerManager) oneShotContainerFromTmpl(ctx context.Context, name
 
 	wasRunning := containerIsAlive(backuperCntr)
 
-	err = mngr.docker.ContainerStop(ctx, backuperCntr.ID, container.StopOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to stop backuper container %s %s - %w", name, backuperCntr.ID, err)
+	if backuperCntr != nil {
+		err = mngr.docker.ContainerStop(ctx, backuperCntr.ID, container.StopOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to stop backuper container %s %s - %w", name, backuperCntr.ID, err)
+		}
 	}
 
 	restoreCfg, err := mngr.prepareBackuperConfigFor(ctx, name, true)
