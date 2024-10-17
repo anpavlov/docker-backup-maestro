@@ -14,7 +14,7 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		Short:        "Utility to auto start/stop backup containers",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Println("Starting")
+			log.Println("Starting maestro")
 			return mngr.Run(cmd.Context())
 		},
 	}

@@ -38,7 +38,7 @@ func (mngr *ContainerManager) handleDockerEvent(ctx context.Context, event event
 	return nil
 }
 
-func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
+func (mngr *ContainerManager) syncBackupers(ctx context.Context) error {
 	var opts events.ListOptions
 	opts.Filters = filters.NewArgs()
 	opts.Filters.Add("label", labelBackupName)
@@ -46,12 +46,12 @@ func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
 	for {
 		eventChan, errChan := mngr.docker.Events(ctx, opts)
 
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-mngr.initDone:
+		err := mngr.initBackupers(ctx)
+		if err != nil {
+			return err
 		}
 
+	eventLoop:
 		for {
 			select {
 			case event := <-eventChan:
@@ -66,7 +66,7 @@ func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
 				}
 
 				if err == io.EOF {
-					break
+					break eventLoop
 				}
 
 				return fmt.Errorf("error during listen for docker events: %w", err)
@@ -76,23 +76,9 @@ func (mngr *ContainerManager) listenEvents(ctx context.Context) error {
 			}
 
 		}
+
 	}
 }
-
-// func (mngr *ContainerManager) getContainerByID(ctx context.Context, id string) (res types.Container, err error) {
-// 	cntrs, err := mngr.docker.ContainerList(ctx, container.ListOptions{Filters: filters.NewArgs(filters.KeyValuePair{Key: "id", Value: id})})
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	if len(cntrs) != 1 {
-// 		err = fmt.Errorf("container by id returned not 1 containger: %d", len(cntrs))
-// 		return
-// 	}
-
-// 	res = cntrs[0]
-// 	return
-// }
 
 func (mngr *ContainerManager) getContainerByLabelValue(ctx context.Context, label, value string, searchAll bool) (*types.Container, error) {
 	var listOpts container.ListOptions

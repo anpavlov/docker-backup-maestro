@@ -45,48 +45,21 @@ type ContainerManager struct {
 	docker dockerApi
 	tmpls  UserTemplates
 	conf   Config
-	// cli      *client.Client
-	initDone chan struct{}
 }
 
 func NewContainerManager(api dockerApi, userCfg UserTemplates, conf Config) *ContainerManager {
 	return &ContainerManager{
-		docker:   api,
-		conf:     conf,
-		tmpls:    userCfg,
-		initDone: make(chan struct{}),
+		docker: api,
+		conf:   conf,
+		tmpls:  userCfg,
 	}
 }
 
 func (mngr *ContainerManager) Run(ctx context.Context) error {
-	errChan := make(chan error)
-	go func() {
-		defer close(errChan)
-		errChan <- mngr.listenEvents(ctx)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil
-	default:
-	}
-
-	mngr.initContainerList(ctx)
-
-	select {
-	case <-ctx.Done():
-		return nil
-	default:
-	}
-
-	close(mngr.initDone)
-
-	return <-errChan
+	return mngr.syncBackupers(ctx)
 }
 
-// мы хотим получить список контейнеров, ДЛЯ которых надо делать бекапные контейнеры,
-// а также список самих бекапных контейнеров, чтобы проверить, что все нужные есть, а ненужные выкосить
-func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
+func (mngr *ContainerManager) initBackupers(ctx context.Context) error {
 	backupers, err := mngr.listContainersWithLabel(ctx, labelBackuperName, true)
 	if err != nil {
 		return err
@@ -140,7 +113,7 @@ func (mngr *ContainerManager) initContainerList(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) error {
-	log.Println("drop backuper")
+	log.Println("drop backuper", name)
 
 	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackuperName, name, false)
 	if err != nil {
@@ -166,7 +139,7 @@ func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) err
 }
 
 func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) error {
-	log.Println("create backuper")
+	log.Println("create backuper", name)
 
 	existingBackuper, err := mngr.getContainerByLabelValue(ctx, labelBackuperName, name, true)
 	if err != nil {
@@ -197,12 +170,9 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 }
 
 func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, backuper types.Container) error {
-	log.Println("sync backuper")
-
 	backupName := toBackup.Labels[labelBackupName]
 
-	// Собрать backuper.Template как будто мы собираемся создавать контейнер, посчитать хэш от итогового темплейта
-	// и сравнить с хэшом запущенного, который записан в служебный лейбл
+	log.Println("sync backuper", backupName)
 
 	backuperCfg, err := mngr.prepareBackuperConfigFor(ctx, backupName, false)
 	if err != nil {
@@ -216,6 +186,7 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 	backuperHash := backuper.Labels[labelBackupConsistencyHash]
 
 	if hash == backuperHash {
+		log.Println("no need to recreate", backupName)
 		return nil
 	}
 
@@ -255,13 +226,11 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	}
 
 	backuperBaseCfg.Volumes = []string{bind}
-	log.Printf("backuper bind %s\n", bind)
 
 	for label, value := range cntr.Labels {
 		if strings.HasPrefix(label, labelBackupEnvPrefix) {
 			envName, _ := strings.CutPrefix(label, labelBackupEnvPrefix)
 			backuperBaseCfg.Environment[envName] = value
-			log.Printf("Env %s = %s\n", envName, value)
 		}
 	}
 
@@ -269,13 +238,6 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	if len(networkLabel) > 0 {
 		backuperBaseCfg.Networks = []string{networkLabel}
 	}
-
-	// TODO получать из backup контейнера по лейблам путь на хосте (или имя volume), который будем маппить внутрь backuper'а
-	// а также еще какие-то параметры
-	// параметры, как это маппить в backuper - задается конфигом backup-maestro через env. или темплейтим в юзер конфиг?
-	// МОЖНО ПРОКИДЫВАТЬ ЛЮБЫЕ ЭНВЫ по префиксу lable'а backup-maestro.backuper.env.<NAME>
-
-	// backuperBaseCfg.Overlay(mngr.tmpls.Backuper)
 
 	return backuperBaseCfg, nil
 }

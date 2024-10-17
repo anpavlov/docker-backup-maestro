@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"crypto/md5"
@@ -21,6 +22,7 @@ type Template struct {
 	Image       string
 	Entrypoint  []string
 	Command     []string
+	Restart     string
 	EnvFile     string            `yaml:"env_file"` // TODO:  parse also as slice (as interface)
 	Environment map[string]string // TODO: parse also as slice
 	Volumes     []string
@@ -58,6 +60,10 @@ func (bCfg *Template) Overlay(other *Template) {
 
 	for k, v := range other.Environment {
 		bCfg.Environment[k] = v
+	}
+
+	if len(other.Restart) != 0 {
+		bCfg.Restart = other.Restart
 	}
 
 	if len(other.EnvFile) != 0 {
@@ -125,8 +131,14 @@ func (bCfg *Template) CreateConfig() (*container.Config, *container.HostConfig, 
 		cntrCfg.Cmd = bCfg.Command
 	}
 
+	rst, err := parseRestart(bCfg.Restart)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse restart '%s' - %w", bCfg.Restart, err)
+	}
+
 	hostCfg := &container.HostConfig{
-		Binds: bCfg.Volumes,
+		Binds:         bCfg.Volumes,
+		RestartPolicy: rst,
 	}
 
 	var netCfg *network.NetworkingConfig
@@ -158,4 +170,29 @@ func ReadTemplateFromFile(path string) (*Template, error) {
 	}
 
 	return tmpl, nil
+}
+
+func parseRestart(restart string) (pol container.RestartPolicy, err error) {
+	parts := strings.Split(restart, ":")
+	switch {
+	case len(parts) > 2:
+		err = fmt.Errorf("restart format invalid. more than one column found '%s'", restart)
+		return
+
+	case len(parts) == 2:
+		var retries int
+		retries, err = strconv.Atoi(parts[1])
+		if err != nil {
+			err = fmt.Errorf("failed to parse retries number as number '%s' - %w", parts[1], err)
+			return
+		}
+
+		pol.Name = container.RestartPolicyMode(parts[0])
+		pol.MaximumRetryCount = retries
+	case len(parts) == 1:
+		pol.Name = container.RestartPolicyMode(parts[0])
+	}
+
+	err = container.ValidateRestartPolicy(pol)
+	return
 }
