@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/anpavlov/docker-backup-mastro.git/backuper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
@@ -37,9 +36,9 @@ type dockerApi interface {
 }
 
 type UserTemplates struct {
-	Backuper    *backuper.Template
-	Restore     *backuper.Template
-	ForceBackup *backuper.Template
+	Backuper    *Template
+	Restore     *Template
+	ForceBackup *Template
 }
 
 type ContainerManager struct {
@@ -228,7 +227,7 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 	return mngr.createBackuper(ctx, backupName)
 }
 
-func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string, rw bool) (*backuper.Template, error) {
+func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string, rw bool) (*Template, error) {
 	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, true)
 	if err != nil {
 		return nil, err
@@ -238,7 +237,7 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 		return nil, fmt.Errorf("backup container '%s' not found", name)
 	}
 
-	backuperBaseCfg := &backuper.Template{
+	backuperBaseCfg := &Template{
 		Labels: map[string]string{
 			labelBackuperName: name,
 		},
@@ -289,7 +288,7 @@ func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string)
 	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup)
 }
 
-func (mngr *ContainerManager) oneShotContainerFromTmpl(ctx context.Context, name string, tmpl *backuper.Template) error {
+func (mngr *ContainerManager) oneShotContainerFromTmpl(ctx context.Context, name string, tmpl *Template) error {
 	backuperCntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, false)
 	if err != nil {
 		return err

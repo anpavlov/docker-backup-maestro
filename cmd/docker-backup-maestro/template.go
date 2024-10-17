@@ -1,4 +1,4 @@
-package backuper
+package main
 
 import (
 	"bufio"

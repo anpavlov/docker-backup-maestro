@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 
-	"github.com/anpavlov/docker-backup-mastro.git/backuper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
@@ -119,7 +118,7 @@ func (mngr *ContainerManager) getContainerByLabelValue(ctx context.Context, labe
 	return nil, nil
 }
 
-func (mngr *ContainerManager) startContainer(ctx context.Context, cfg *backuper.Template) error {
+func (mngr *ContainerManager) startContainer(ctx context.Context, cfg *Template) error {
 	cntrCfg, hstCfg, netCfg, err := cfg.CreateConfig()
 	if err != nil {
 		return err

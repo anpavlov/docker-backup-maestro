@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/anpavlov/docker-backup-mastro.git/backuper"
 	"github.com/caarlos0/env/v11"
 	"github.com/docker/docker/client"
 )
@@ -23,12 +22,12 @@ func main() {
 		log.Fatalln("failed to create docker client:", err)
 	}
 
-	backuperTmpl, err := backuper.ReadTemplateFromFile(cfg.BackuperTemplatePath)
+	backuperTmpl, err := ReadTemplateFromFile(cfg.BackuperTemplatePath)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	restoreTmpl, err := backuper.ReadTemplateFromFile(cfg.RestoreTemplatePath)
+	restoreTmpl, err := ReadTemplateFromFile(cfg.RestoreTemplatePath)
 	if err != nil {
 		log.Fatalln(err)
 	}
