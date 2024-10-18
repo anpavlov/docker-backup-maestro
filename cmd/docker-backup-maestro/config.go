@@ -6,6 +6,6 @@ type Config struct {
 	}
 
 	LabelPrefix          string `env:"LABEL_PREFIX"`
-	BackuperTemplatePath string `env:"BACKUP_TMPL_PATH" envDefault:"/root/backuper_tmpl.yml"`
+	BackuperTemplatePath string `env:"BACKUP_TMPL_PATH" envDefault:"/root/backup_tmpl.yml"`
 	RestoreTemplatePath  string `env:"RESTORE_TMPL_PATH" envDefault:"/root/restore_tmpl.yml"`
 }
