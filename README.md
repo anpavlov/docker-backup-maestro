@@ -82,8 +82,11 @@ environment:
 ### Environment variables for docker-backup-maestro
 
 `BIND_PATH` - path inside backup container where app data will be mounted. Default: `/data`
+
 `BACKUP_TMPL_PATH` - path inside maestro container, where backup template is located. Default: `/root/backup_tmpl.yml`
+
 `RESTORE_TMPL_PATH` - path inside maestro container, where restore template is located. Default: `/root/restore_tmpl.yml`
+
 `LABEL_PREFIX` - custom prefix for all labels. May be overrided to run multiple independent docker-backup-maestro configurations. Default: `docker-backup-maestro`
 
 ## Labels for app containers
@@ -91,8 +94,11 @@ environment:
 Labels on app containers are used to setup apps companion container. Setting this labels allows to have different settings on each companion container.
 
 `docker-backup-maestro.backup.name` - required label that identifies app containers that maestro will work with. Must be unique name for each target container.
+
 `docker-backup-maestro.backup.path` - path inside app container or volume name that will be mounted in backup container
+
 `docker-backup-maestro.backup.network` - name of docker network. Backup container will be connected to it.
+
 `docker-backup-maestro.backup.env.<ENV>` - this label forwards <ENV> environment var into companion backup container. Value of this label is passed as ENV value. It is possible to forward any number of environment vars.
 
 ## Template for companion backup containers
