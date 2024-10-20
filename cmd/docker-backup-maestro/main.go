@@ -22,17 +22,28 @@ func main() {
 		log.Fatalln("failed to create docker client:", err)
 	}
 
-	backuperTmpl, err := ReadTemplateFromFile(cfg.BackuperTemplatePath)
+	backuperTmpl, err := ReadTemplateFromFile(cfg.BackuperTemplatePath, true)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	restoreTmpl, err := ReadTemplateFromFile(cfg.RestoreTemplatePath)
+	restoreTmpl, err := ReadTemplateFromFile(cfg.RestoreTemplatePath, false)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	mngr := NewContainerManager(cli, UserTemplates{Backuper: backuperTmpl, Restore: restoreTmpl}, cfg)
+	forceTmpl, err := ReadTemplateFromFile(cfg.ForceBackupTemplatePath, false)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	tmpls := UserTemplates{
+		Backuper:    backuperTmpl,
+		Restore:     restoreTmpl,
+		ForceBackup: forceTmpl,
+	}
+
+	mngr := NewContainerManager(cli, tmpls, cfg)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -154,8 +155,12 @@ func (bCfg *Template) CreateConfig() (*container.Config, *container.HostConfig, 
 	return cntrCfg, hostCfg, netCfg, nil
 }
 
-func ReadTemplateFromFile(path string) (*Template, error) {
+func ReadTemplateFromFile(path string, required bool) (*Template, error) {
 	tmplData, err := os.ReadFile(path)
+	if err != nil && errors.Is(err, os.ErrNotExist) && !required {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("backuper template '%s' read failed: %w", path, err)
 	}

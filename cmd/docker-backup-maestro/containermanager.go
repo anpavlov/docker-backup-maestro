@@ -243,10 +243,18 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 }
 
 func (mngr *ContainerManager) StartRestore(ctx context.Context, name string) error {
+	if mngr.tmpls.Restore == nil {
+		return fmt.Errorf("restore template not set")
+	}
+
 	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.Restore)
 }
 
 func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string) error {
+	if mngr.tmpls.ForceBackup == nil {
+		return fmt.Errorf("force backup template not set")
+	}
+
 	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup)
 }
 
