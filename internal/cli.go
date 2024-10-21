@@ -1,16 +1,65 @@
-package main
+package internal
 
 import (
 	"context"
 	"log"
+	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/docker/docker/client"
+	"github.com/spf13/cobra"
 )
 
-func main() {
+func NewRootCmd(mngr *ContainerManager) *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:          filepath.Base(os.Args[0]),
+		Short:        "Utility to auto start/stop backup containers",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log.Println("Starting maestro")
+			return mngr.Run(cmd.Context())
+		},
+	}
+
+	restoreCmd := &cobra.Command{
+		Use:   "restore name",
+		Short: "Run restore container",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log.Println("Restoring")
+
+			if len(args) != 1 {
+				log.Fatalln("restore name not passed")
+			}
+
+			return mngr.StartRestore(cmd.Context(), args[0])
+		},
+	}
+
+	forceBackupCmd := &cobra.Command{
+		Use:   "forcebackup name",
+		Short: "Run force backup container",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log.Println("Running force backup")
+
+			if len(args) != 1 {
+				log.Fatalln("forcebackup name not passed")
+			}
+
+			return mngr.StartForceBackup(cmd.Context(), args[0])
+		},
+	}
+
+	rootCmd.AddCommand(restoreCmd, forceBackupCmd)
+
+	return rootCmd
+}
+
+func RunApp() {
 	var cfg Config
 	err := env.Parse(&cfg)
 	if err != nil {
@@ -61,5 +110,4 @@ func main() {
 	if err != nil {
 		log.Fatalln("error while running:", err)
 	}
-
 }
