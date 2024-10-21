@@ -32,9 +32,17 @@ func main() {
 		log.Fatalln(err)
 	}
 
+	if !cfg.NoRestoreOverlay {
+		restoreTmpl = backuperTmpl.Overlay(restoreTmpl)
+	}
+
 	forceTmpl, err := ReadTemplateFromFile(cfg.ForceBackupTemplatePath, false)
 	if err != nil {
 		log.Fatalln(err)
+	}
+
+	if !cfg.NoForceBackupOverlay {
+		forceTmpl = backuperTmpl.Overlay(forceTmpl)
 	}
 
 	tmpls := UserTemplates{

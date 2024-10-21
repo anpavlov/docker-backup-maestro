@@ -160,7 +160,7 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 		return err
 	}
 
-	backuperCfg.Overlay(mngr.tmpls.Backuper)
+	backuperCfg = mngr.tmpls.Backuper.Overlay(backuperCfg)
 
 	hash := backuperCfg.Hash()
 
@@ -179,7 +179,7 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 		return err
 	}
 
-	backuperCfg.Overlay(mngr.tmpls.Backuper)
+	backuperCfg = mngr.tmpls.Backuper.Overlay(backuperCfg)
 
 	hash := backuperCfg.Hash()
 
@@ -247,7 +247,7 @@ func (mngr *ContainerManager) StartRestore(ctx context.Context, name string) err
 		return fmt.Errorf("restore template not set")
 	}
 
-	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.Restore)
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore)
 }
 
 func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string) error {
@@ -255,10 +255,10 @@ func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string)
 		return fmt.Errorf("force backup template not set")
 	}
 
-	return mngr.oneShotContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup)
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup)
 }
 
-func (mngr *ContainerManager) oneShotContainerFromTmpl(ctx context.Context, name string, tmpl *Template) error {
+func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template) error {
 	backuperCntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, false)
 	if err != nil {
 		return err
@@ -273,14 +273,14 @@ func (mngr *ContainerManager) oneShotContainerFromTmpl(ctx context.Context, name
 		}
 	}
 
-	restoreCfg, err := mngr.prepareBackuperConfigFor(ctx, name, true)
+	oneOffCfg, err := mngr.prepareBackuperConfigFor(ctx, name, true)
 	if err != nil {
 		return fmt.Errorf("failed to generate config for %s - %w", name, err)
 	}
 
-	restoreCfg.Overlay(tmpl)
+	oneOffCfg = tmpl.Overlay(oneOffCfg)
 
-	cntrCfg, hstCfg, netCfg, err := restoreCfg.CreateConfig()
+	cntrCfg, hstCfg, netCfg, err := oneOffCfg.CreateConfig()
 	if err != nil {
 		return err
 	}

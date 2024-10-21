@@ -140,3 +140,4 @@ readme todo:
 - restore and force backup commands
 - backup mounts data ro, restore - rw
 - restore from scratch using container create
+- env var substitution in tmpl and in ?

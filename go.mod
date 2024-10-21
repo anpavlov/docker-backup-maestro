@@ -7,6 +7,7 @@ require (
 	github.com/docker/docker v27.2.1+incompatible
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/spf13/cobra v1.8.1
+	github.com/tiendc/go-deepcopy v1.1.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 

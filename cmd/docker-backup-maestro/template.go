@@ -16,6 +16,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/tiendc/go-deepcopy"
 	"gopkg.in/yaml.v2"
 )
 
@@ -46,46 +47,55 @@ func (bCfg *Template) Hash() string {
 	return hashHex
 }
 
-func (bCfg *Template) Overlay(other *Template) {
+func (bCfg *Template) Overlay(other *Template) *Template {
+	newTmpl := Template{}
+
+	err := deepcopy.Copy(&newTmpl, other)
+	if err != nil {
+		log.Fatal("deepcopy failed:", err)
+	}
+
 	if len(other.Image) != 0 {
-		bCfg.Image = other.Image
+		newTmpl.Image = other.Image
 	}
 
 	if len(other.Entrypoint) != 0 {
-		bCfg.Entrypoint = other.Entrypoint
+		newTmpl.Entrypoint = other.Entrypoint
 	}
 
 	if len(other.Command) != 0 {
-		bCfg.Command = other.Command
+		newTmpl.Command = other.Command
 	}
 
 	for k, v := range other.Environment {
-		bCfg.Environment[k] = v
+		newTmpl.Environment[k] = v
 	}
 
 	if len(other.Restart) != 0 {
-		bCfg.Restart = other.Restart
+		newTmpl.Restart = other.Restart
 	}
 
 	if len(other.EnvFile) != 0 {
-		bCfg.EnvFile = other.EnvFile
+		newTmpl.EnvFile = other.EnvFile
 	}
 
 	for _, v := range other.Volumes {
-		if !slices.Contains(bCfg.Volumes, v) {
-			bCfg.Volumes = append(bCfg.Volumes, v)
+		if !slices.Contains(newTmpl.Volumes, v) {
+			newTmpl.Volumes = append(newTmpl.Volumes, v)
 		}
 	}
 
 	for k, v := range other.Labels {
-		bCfg.Labels[k] = v
+		newTmpl.Labels[k] = v
 	}
 
 	for _, k := range other.Networks {
-		if !slices.Contains(bCfg.Networks, k) {
-			bCfg.Networks = append(bCfg.Networks, k)
+		if !slices.Contains(newTmpl.Networks, k) {
+			newTmpl.Networks = append(newTmpl.Networks, k)
 		}
 	}
+
+	return &newTmpl
 }
 
 func (bCfg *Template) CreateConfig() (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
