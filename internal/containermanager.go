@@ -13,18 +13,28 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-const (
-	labelPrefix                = "docker-backup-maestro"
-	labelBackup                = labelPrefix + ".backup"
-	labelBackupName            = labelBackup + ".name"
-	labelBackupPath            = labelBackup + ".path"
-	labelBackupNetwork         = labelBackup + ".network"
-	labelBackupEnvPrefix       = labelBackup + ".env."
-	labelBackupConsistencyHash = labelBackup + ".consistencyhash"
+type labels struct {
+	backupName            string
+	backupPath            string
+	backupNetwork         string
+	backupEnvPrefix       string
+	backupConsistencyHash string
 
-	labelBackuper     = labelPrefix + ".backuper"
-	labelBackuperName = labelBackuper + ".name"
-)
+	backuperName string
+}
+
+func prepareLabels(prefix string) labels {
+	backup := prefix + ".backup"
+	return labels{
+		backupName:            backup + ".name",
+		backupPath:            backup + ".path",
+		backupNetwork:         backup + ".network",
+		backupEnvPrefix:       backup + ".env.",
+		backupConsistencyHash: backup + ".consistencyhash",
+
+		backuperName: prefix + ".backuper" + ".name",
+	}
+}
 
 type dockerApi interface {
 	Events(ctx context.Context, options events.ListOptions) (<-chan events.Message, <-chan error)
@@ -45,6 +55,7 @@ type ContainerManager struct {
 	docker dockerApi
 	tmpls  UserTemplates
 	conf   Config
+	labels labels
 }
 
 func NewContainerManager(api dockerApi, userCfg UserTemplates, conf Config) *ContainerManager {
@@ -52,6 +63,7 @@ func NewContainerManager(api dockerApi, userCfg UserTemplates, conf Config) *Con
 		docker: api,
 		conf:   conf,
 		tmpls:  userCfg,
+		labels: prepareLabels(conf.LabelPrefix),
 	}
 }
 
@@ -60,22 +72,22 @@ func (mngr *ContainerManager) Run(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) initBackupers(ctx context.Context) error {
-	backupers, err := mngr.listContainersWithLabel(ctx, labelBackuperName, true)
+	backupers, err := mngr.listContainersWithLabel(ctx, mngr.labels.backuperName, true)
 	if err != nil {
 		return err
 	}
 
-	toBackups, err := mngr.listContainersWithLabel(ctx, labelBackupName, false)
+	toBackups, err := mngr.listContainersWithLabel(ctx, mngr.labels.backupName, false)
 	if err != nil {
 		return err
 	}
 
 	for _, backuper := range backupers {
-		backupName := backuper.Labels[labelBackuperName]
+		backupName := backuper.Labels[mngr.labels.backuperName]
 		found := false
 
 		for _, toBackup := range toBackups {
-			if toBackup.Labels[labelBackupName] == backupName {
+			if toBackup.Labels[mngr.labels.backupName] == backupName {
 				found = true
 				break
 			}
@@ -90,11 +102,11 @@ func (mngr *ContainerManager) initBackupers(ctx context.Context) error {
 	}
 
 	for _, toBackup := range toBackups {
-		backupName := toBackup.Labels[labelBackupName]
+		backupName := toBackup.Labels[mngr.labels.backupName]
 		found := false
 
 		for _, backuper := range backupers {
-			if backuper.Labels[labelBackuperName] == backupName {
+			if backuper.Labels[mngr.labels.backuperName] == backupName {
 				found = true
 				mngr.updateBackuper(ctx, toBackup, backuper)
 				break
@@ -115,7 +127,7 @@ func (mngr *ContainerManager) initBackupers(ctx context.Context) error {
 func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) error {
 	log.Println("drop backuper", name)
 
-	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackuperName, name, false)
+	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
 	if err != nil {
 		return err
 	}
@@ -141,13 +153,13 @@ func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) err
 func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) error {
 	log.Println("create backuper", name)
 
-	existingBackuper, err := mngr.getContainerByLabelValue(ctx, labelBackuperName, name, true)
+	existingBackuper, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
 	if err != nil {
 		return err
 	}
 
 	if existingBackuper != nil {
-		existingBackup, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, true)
+		existingBackup, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, true)
 		if err != nil {
 			return err
 		}
@@ -164,13 +176,13 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 
 	hash := backuperCfg.Hash()
 
-	backuperCfg.Labels[labelBackupConsistencyHash] = hash
+	backuperCfg.Labels[mngr.labels.backupConsistencyHash] = hash
 
 	return mngr.startContainer(ctx, backuperCfg)
 }
 
 func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, backuper types.Container) error {
-	backupName := toBackup.Labels[labelBackupName]
+	backupName := toBackup.Labels[mngr.labels.backupName]
 
 	log.Println("sync backuper", backupName)
 
@@ -183,7 +195,7 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 
 	hash := backuperCfg.Hash()
 
-	backuperHash := backuper.Labels[labelBackupConsistencyHash]
+	backuperHash := backuper.Labels[mngr.labels.backupConsistencyHash]
 
 	if hash == backuperHash {
 		log.Println("no need to recreate", backupName)
@@ -199,7 +211,7 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 }
 
 func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name string, rw bool) (*Template, error) {
-	cntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, true)
+	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, true)
 	if err != nil {
 		return nil, err
 	}
@@ -210,12 +222,12 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 
 	backuperBaseCfg := &Template{
 		Labels: map[string]string{
-			labelBackuperName: name,
+			mngr.labels.backuperName: name,
 		},
 		Environment: map[string]string{},
 	}
 
-	hostPathToBind := getContainerLabel(cntr, labelBackupPath)
+	hostPathToBind := getContainerLabel(cntr, mngr.labels.backupPath)
 	if len(hostPathToBind) == 0 {
 		return nil, fmt.Errorf("could not find path to mount for backup")
 	}
@@ -228,13 +240,13 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	backuperBaseCfg.Volumes = []string{bind}
 
 	for label, value := range cntr.Labels {
-		if strings.HasPrefix(label, labelBackupEnvPrefix) {
-			envName, _ := strings.CutPrefix(label, labelBackupEnvPrefix)
+		if strings.HasPrefix(label, mngr.labels.backupEnvPrefix) {
+			envName, _ := strings.CutPrefix(label, mngr.labels.backupEnvPrefix)
 			backuperBaseCfg.Environment[envName] = value
 		}
 	}
 
-	networkLabel := getContainerLabel(cntr, labelBackupNetwork)
+	networkLabel := getContainerLabel(cntr, mngr.labels.backupNetwork)
 	if len(networkLabel) > 0 {
 		backuperBaseCfg.Networks = []string{networkLabel}
 	}
@@ -259,7 +271,7 @@ func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string)
 }
 
 func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template) error {
-	backuperCntr, err := mngr.getContainerByLabelValue(ctx, labelBackupName, name, false)
+	backuperCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, false)
 	if err != nil {
 		return err
 	}

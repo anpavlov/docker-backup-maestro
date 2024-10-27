@@ -50,7 +50,7 @@ func (bCfg *Template) Hash() string {
 func (bCfg *Template) Overlay(other *Template) *Template {
 	newTmpl := Template{}
 
-	err := deepcopy.Copy(&newTmpl, other)
+	err := deepcopy.Copy(&newTmpl, bCfg)
 	if err != nil {
 		log.Fatal("deepcopy failed:", err)
 	}

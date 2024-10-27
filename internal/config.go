@@ -5,7 +5,7 @@ type Config struct {
 		BindToPath string `env:"BIND_PATH" envDefault:"/data"`
 	}
 
-	LabelPrefix string `env:"LABEL_PREFIX"`
+	LabelPrefix string `env:"LABEL_PREFIX" envDefault:"docker-backup-maestro"`
 
 	BackuperTemplatePath    string `env:"BACKUP_TMPL_PATH" envDefault:"/root/backup_tmpl.yml"`
 	RestoreTemplatePath     string `env:"RESTORE_TMPL_PATH" envDefault:"/root/restore_tmpl.yml"`
