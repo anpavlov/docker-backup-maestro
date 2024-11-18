@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -227,17 +228,39 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 		Environment: map[string]string{},
 	}
 
-	hostPathToBind := getContainerLabel(cntr, mngr.labels.backupPath)
-	if len(hostPathToBind) == 0 {
-		return nil, fmt.Errorf("could not find path to mount for backup")
+	volumes := []string{}
+
+	// check for multipath first
+	for label, value := range cntr.Labels {
+		if strings.HasPrefix(label, mngr.labels.backupPath+".") {
+			dirName := strings.TrimPrefix(label, mngr.labels.backupPath+".")
+			hostPath := value
+
+			bind := fmt.Sprintf("%s:%s", hostPath, path.Join(mngr.conf.Backuper.BindToPath, dirName))
+
+			if !rw {
+				bind += ":ro"
+			}
+
+			volumes = append(volumes, bind)
+		}
 	}
 
-	bind := fmt.Sprintf("%s:%s", hostPathToBind, mngr.conf.Backuper.BindToPath)
-	if !rw {
-		bind += ":ro"
+	if len(volumes) == 0 {
+		hostPathToBind := getContainerLabel(cntr, mngr.labels.backupPath)
+		if len(hostPathToBind) == 0 {
+			return nil, fmt.Errorf("could not find path to mount for backup")
+		}
+
+		bind := fmt.Sprintf("%s:%s", hostPathToBind, mngr.conf.Backuper.BindToPath)
+		if !rw {
+			bind += ":ro"
+		}
+
+		volumes = append(volumes, bind)
 	}
 
-	backuperBaseCfg.Volumes = []string{bind}
+	backuperBaseCfg.Volumes = volumes
 
 	for label, value := range cntr.Labels {
 		if strings.HasPrefix(label, mngr.labels.backupEnvPrefix) {
