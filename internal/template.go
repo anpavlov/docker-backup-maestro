@@ -1,12 +1,12 @@
 package internal
 
 import (
-	"bufio"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -14,28 +14,87 @@ import (
 
 	"crypto/md5"
 
+	"github.com/compose-spec/compose-go/v2/dotenv"
+	composegoutils "github.com/compose-spec/compose-go/v2/utils"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/tiendc/go-deepcopy"
 	"gopkg.in/yaml.v2"
 )
 
+type StringOneOrArray []string
+
+func (val *StringOneOrArray) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var a []string
+	err := unmarshal(&a)
+	if err != nil {
+		var s string
+		err := unmarshal(&s)
+		if err != nil {
+			return err
+		}
+		*val = []string{s}
+	} else {
+		*val = a
+	}
+	return nil
+}
+
+type StringMapOrArray map[string]string
+
+func (val *StringMapOrArray) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var m map[string]string
+	err := unmarshal(&m)
+	if err != nil {
+		var a []string
+		err := unmarshal(&a)
+		if err != nil {
+			return err
+		}
+		*val = composegoutils.GetAsEqualsMap(a)
+	} else {
+		*val = m
+	}
+	return nil
+}
+
+type BuildInfo struct {
+	data struct {
+		Context    string
+		Dockerfile string
+	}
+}
+
+func (val *BuildInfo) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	err := unmarshal(&val.data)
+	if err != nil {
+		var s string
+		err := unmarshal(&s)
+		if err != nil {
+			return err
+		}
+		val.data.Context = s
+	}
+	return nil
+}
+
 type Template struct {
+	Build       BuildInfo
 	Image       string
 	Entrypoint  []string
 	Command     []string
 	Restart     string
-	EnvFile     string            `yaml:"env_file"` // TODO:  parse also as slice (as interface)
-	Environment map[string]string // TODO: parse also as slice
+	EnvFile     StringOneOrArray `yaml:"env_file"`
+	Environment StringMapOrArray
 	Volumes     []string
-	Labels      map[string]string
+	Labels      StringMapOrArray
 	Networks    []string
 }
 
-func (bCfg *Template) Hash() string {
+func (tmpl *Template) Hash() string {
 	hashMd5 := md5.New()
 
-	jsonStr, err := json.Marshal(bCfg)
+	jsonStr, err := json.Marshal(tmpl)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -47,16 +106,20 @@ func (bCfg *Template) Hash() string {
 	return hashHex
 }
 
-func (bCfg *Template) Overlay(other *Template) *Template {
+func (tmpl *Template) Overlay(other *Template) *Template {
 	newTmpl := Template{}
 
-	err := deepcopy.Copy(&newTmpl, bCfg)
+	err := deepcopy.Copy(&newTmpl, tmpl)
 	if err != nil {
 		log.Fatal("deepcopy failed:", err)
 	}
 
 	if len(other.Image) != 0 {
 		newTmpl.Image = other.Image
+	}
+
+	if len(other.Build.data.Context) != 0 || len(other.Build.data.Dockerfile) != 0 {
+		newTmpl.Build = other.Build
 	}
 
 	if len(other.Entrypoint) != 0 {
@@ -67,17 +130,17 @@ func (bCfg *Template) Overlay(other *Template) *Template {
 		newTmpl.Command = other.Command
 	}
 
-	for k, v := range other.Environment {
-		newTmpl.Environment[k] = v
+	if newTmpl.Environment == nil {
+		newTmpl.Environment = other.Environment
+	} else {
+		maps.Copy(newTmpl.Environment, other.Environment)
 	}
 
 	if len(other.Restart) != 0 {
 		newTmpl.Restart = other.Restart
 	}
 
-	if len(other.EnvFile) != 0 {
-		newTmpl.EnvFile = other.EnvFile
-	}
+	newTmpl.EnvFile = append(newTmpl.EnvFile, other.EnvFile...)
 
 	for _, v := range other.Volumes {
 		if !slices.Contains(newTmpl.Volumes, v) {
@@ -85,8 +148,10 @@ func (bCfg *Template) Overlay(other *Template) *Template {
 		}
 	}
 
-	for k, v := range other.Labels {
-		newTmpl.Labels[k] = v
+	if newTmpl.Labels == nil {
+		newTmpl.Labels = other.Labels
+	} else {
+		maps.Copy(newTmpl.Labels, other.Labels)
 	}
 
 	for _, k := range other.Networks {
@@ -98,66 +163,67 @@ func (bCfg *Template) Overlay(other *Template) *Template {
 	return &newTmpl
 }
 
-func (bCfg *Template) CreateConfig() (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
-	if len(bCfg.EnvFile) != 0 {
-		f, err := os.Open(bCfg.EnvFile)
+func (tmpl *Template) CreateConfig() (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+	var (
+		environment map[string]string
+	)
+
+	if len(tmpl.EnvFile) != 0 {
+		var err error
+		environment, err = dotenv.GetEnvFromFile(composegoutils.GetAsEqualsMap(os.Environ()), tmpl.EnvFile)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("env_file '%s' open error: %w", bCfg.EnvFile, err)
-		}
-
-		defer f.Close()
-
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			envLine := scanner.Text()
-			envKV := strings.SplitN(envLine, "=", 1)
-			if len(envKV) == 1 {
-				bCfg.Environment[envKV[0]] = ""
-			} else {
-				bCfg.Environment[envKV[0]] = envKV[1]
-			}
-		}
-
-		if scanner.Err() != nil {
-			return nil, nil, nil, fmt.Errorf("env_file '%s' read error: %w", bCfg.EnvFile, scanner.Err())
+			return nil, nil, nil, fmt.Errorf("failed to read env file: %w", err)
 		}
 	}
 
-	envArr := make([]string, 0, len(bCfg.Environment))
-	for envName, envVal := range bCfg.Environment {
-		envArr = append(envArr, fmt.Sprintf("%s=%s", envName, envVal))
+	if tmpl.Environment != nil {
+		envMap, err := dotenv.ParseWithLookup(strings.NewReader(strings.Join(composegoutils.GetAsStringList(tmpl.Environment), "\n")), os.LookupEnv)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("")
+		}
+
+		if environment == nil {
+			environment = envMap
+		} else {
+			maps.Copy(environment, envMap)
+		}
+	}
+
+	var envArr []string
+	if len(environment) > 0 {
+		envArr = composegoutils.GetAsStringList(environment)
 	}
 
 	cntrCfg := &container.Config{
-		Image:  bCfg.Image,
+		Image:  tmpl.Image,
 		Env:    envArr,
-		Labels: bCfg.Labels,
+		Labels: tmpl.Labels,
 	}
 
-	if len(bCfg.Entrypoint) != 0 {
-		cntrCfg.Entrypoint = bCfg.Entrypoint
+	if len(tmpl.Entrypoint) != 0 {
+		cntrCfg.Entrypoint = tmpl.Entrypoint
 	}
 
-	if len(bCfg.Command) != 0 {
-		cntrCfg.Cmd = bCfg.Command
+	if len(tmpl.Command) != 0 {
+		cntrCfg.Cmd = tmpl.Command
 	}
 
-	rst, err := parseRestart(bCfg.Restart)
+	rst, err := parseRestart(tmpl.Restart)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse restart '%s' - %w", bCfg.Restart, err)
+		return nil, nil, nil, fmt.Errorf("failed to parse restart '%s' - %w", tmpl.Restart, err)
 	}
 
 	hostCfg := &container.HostConfig{
-		Binds:         bCfg.Volumes,
+		Binds:         tmpl.Volumes,
 		RestartPolicy: rst,
 	}
 
 	var netCfg *network.NetworkingConfig
 
-	if len(bCfg.Networks) != 0 {
+	if len(tmpl.Networks) != 0 {
 		netCfg = &network.NetworkingConfig{}
 
-		for _, netName := range bCfg.Networks {
+		for _, netName := range tmpl.Networks {
 			netCfg.EndpointsConfig[netName] = nil
 		}
 	}

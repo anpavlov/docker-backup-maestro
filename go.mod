@@ -4,6 +4,7 @@ go 1.22.1
 
 require (
 	github.com/caarlos0/env/v11 v11.2.2
+	github.com/compose-spec/compose-go/v2 v2.4.6
 	github.com/docker/docker v27.2.1+incompatible
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/spf13/cobra v1.8.1
@@ -27,6 +28,7 @@ require (
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.55.0 // indirect
 	go.opentelemetry.io/otel v1.31.0 // indirect
@@ -34,6 +36,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.31.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.31.0 // indirect
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
+	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
