@@ -59,21 +59,21 @@ func (val *StringMapOrArray) UnmarshalYAML(unmarshal func(interface{}) error) er
 }
 
 type BuildInfo struct {
-	data struct {
+	Data struct {
 		Context    string
 		Dockerfile string
 	}
 }
 
 func (val *BuildInfo) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	err := unmarshal(&val.data)
+	err := unmarshal(&val.Data)
 	if err != nil {
 		var s string
 		err := unmarshal(&s)
 		if err != nil {
 			return err
 		}
-		val.data.Context = s
+		val.Data.Context = s
 	}
 	return nil
 }
@@ -89,6 +89,7 @@ type Template struct {
 	Volumes     []string
 	Labels      StringMapOrArray
 	Networks    []string
+	AutoRemove  bool
 }
 
 func (tmpl *Template) Hash() string {
@@ -114,12 +115,20 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 		log.Fatal("deepcopy failed:", err)
 	}
 
-	if len(other.Image) != 0 {
-		newTmpl.Image = other.Image
+	if len(other.Build.Data.Context) != 0 || len(other.Build.Data.Dockerfile) != 0 {
+		newTmpl.Build = other.Build
+
+		if len(other.Image) == 0 {
+			newTmpl.Image = ""
+		}
 	}
 
-	if len(other.Build.data.Context) != 0 || len(other.Build.data.Dockerfile) != 0 {
-		newTmpl.Build = other.Build
+	if len(other.Image) != 0 {
+		newTmpl.Image = other.Image
+
+		if len(other.Build.Data.Context) == 0 && len(other.Build.Data.Dockerfile) == 0 {
+			newTmpl.Build = BuildInfo{}
+		}
 	}
 
 	if len(other.Entrypoint) != 0 {
@@ -163,7 +172,7 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 	return &newTmpl
 }
 
-func (tmpl *Template) CreateConfig() (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+func (tmpl *Template) CreateConfig() (*BuildInfo, *container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
 	var (
 		environment map[string]string
 	)
@@ -172,14 +181,14 @@ func (tmpl *Template) CreateConfig() (*container.Config, *container.HostConfig, 
 		var err error
 		environment, err = dotenv.GetEnvFromFile(composegoutils.GetAsEqualsMap(os.Environ()), tmpl.EnvFile)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to read env file: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to read env file: %w", err)
 		}
 	}
 
 	if tmpl.Environment != nil {
 		envMap, err := dotenv.ParseWithLookup(strings.NewReader(strings.Join(composegoutils.GetAsStringList(tmpl.Environment), "\n")), os.LookupEnv)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("")
+			return nil, nil, nil, nil, fmt.Errorf("")
 		}
 
 		if environment == nil {
@@ -210,12 +219,13 @@ func (tmpl *Template) CreateConfig() (*container.Config, *container.HostConfig, 
 
 	rst, err := parseRestart(tmpl.Restart)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse restart '%s' - %w", tmpl.Restart, err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to parse restart '%s' - %w", tmpl.Restart, err)
 	}
 
 	hostCfg := &container.HostConfig{
 		Binds:         tmpl.Volumes,
 		RestartPolicy: rst,
+		AutoRemove:    tmpl.AutoRemove,
 	}
 
 	var netCfg *network.NetworkingConfig
@@ -228,7 +238,12 @@ func (tmpl *Template) CreateConfig() (*container.Config, *container.HostConfig, 
 		}
 	}
 
-	return cntrCfg, hostCfg, netCfg, nil
+	var buildInfo *BuildInfo
+	if len(tmpl.Build.Data.Context) > 0 || len(tmpl.Build.Data.Dockerfile) > 0 {
+		buildInfo = &tmpl.Build
+	}
+
+	return buildInfo, cntrCfg, hostCfg, netCfg, nil
 }
 
 func ReadTemplateFromFile(path string, required bool) (*Template, error) {

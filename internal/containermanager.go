@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"path"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -21,6 +23,7 @@ type labels struct {
 	backupEnvPrefix       string
 	backupConsistencyHash string
 
+	backuper     string
 	backuperName string
 }
 
@@ -33,6 +36,7 @@ func prepareLabels(prefix string) labels {
 		backupEnvPrefix:       backup + ".env.",
 		backupConsistencyHash: backup + ".consistencyhash",
 
+		backuper:     prefix + ".backuper",
 		backuperName: prefix + ".backuper" + ".name",
 	}
 }
@@ -44,6 +48,8 @@ type dockerApi interface {
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
+	ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
+	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
 }
 
 type UserTemplates struct {
@@ -179,7 +185,7 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 
 	backuperCfg.Labels[mngr.labels.backupConsistencyHash] = hash
 
-	return mngr.startContainer(ctx, backuperCfg)
+	return mngr.startBackuper(ctx, backuperCfg)
 }
 
 func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, backuper types.Container) error {
@@ -282,7 +288,7 @@ func (mngr *ContainerManager) StartRestore(ctx context.Context, name string) err
 		return fmt.Errorf("restore template not set")
 	}
 
-	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore)
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore, "restore")
 }
 
 func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string) error {
@@ -290,10 +296,10 @@ func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string)
 		return fmt.Errorf("force backup template not set")
 	}
 
-	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup)
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup, "forcebackup")
 }
 
-func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template) error {
+func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template, purpose string) error {
 	backuperCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, false)
 	if err != nil {
 		return err
@@ -315,23 +321,12 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 
 	oneOffCfg = tmpl.Overlay(oneOffCfg)
 
-	cntrCfg, hstCfg, netCfg, err := oneOffCfg.CreateConfig()
+	oneOffCfg.AutoRemove = true
+
+	cntrId, err := mngr.createContainer(ctx, oneOffCfg, mngr.labels.backuper+"."+purpose)
 	if err != nil {
 		return err
 	}
-
-	hstCfg.AutoRemove = true
-
-	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, "")
-	if err != nil {
-		return err
-	}
-
-	for _, warn := range resp.Warnings {
-		log.Println("WARN:", warn)
-	}
-
-	cntrId := resp.ID
 
 	errChan := make(chan error)
 	go func() {
