@@ -23,8 +23,10 @@ type labels struct {
 	backupEnvPrefix       string
 	backupConsistencyHash string
 
-	backuper     string
-	backuperName string
+	backuperName   string
+	backuperTag    string
+	forceBackupTag string
+	restoreTag     string
 }
 
 func prepareLabels(prefix string) labels {
@@ -36,8 +38,10 @@ func prepareLabels(prefix string) labels {
 		backupEnvPrefix:       backup + ".env.",
 		backupConsistencyHash: backup + ".consistencyhash",
 
-		backuper:     prefix + ".backuper",
-		backuperName: prefix + ".backuper" + ".name",
+		backuperName:   prefix + ".backuper" + ".name",
+		backuperTag:    prefix + ".backuper",
+		forceBackupTag: prefix + ".forcebackup",
+		restoreTag:     prefix + ".restore",
 	}
 }
 
@@ -50,6 +54,7 @@ type dockerApi interface {
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
 	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
+	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
 }
 
 type UserTemplates struct {
@@ -288,7 +293,7 @@ func (mngr *ContainerManager) StartRestore(ctx context.Context, name string) err
 		return fmt.Errorf("restore template not set")
 	}
 
-	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore, "restore")
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore, mngr.labels.restoreTag)
 }
 
 func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string) error {
@@ -296,10 +301,10 @@ func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string)
 		return fmt.Errorf("force backup template not set")
 	}
 
-	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup, "forcebackup")
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag)
 }
 
-func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template, purpose string) error {
+func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template, tag string) error {
 	backuperCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, false)
 	if err != nil {
 		return err
@@ -323,7 +328,7 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 
 	oneOffCfg.AutoRemove = true
 
-	cntrId, err := mngr.createContainer(ctx, oneOffCfg, mngr.labels.backuper+"."+purpose)
+	cntrId, err := mngr.createContainer(ctx, oneOffCfg, tag)
 	if err != nil {
 		return err
 	}
@@ -348,6 +353,189 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 		err = mngr.docker.ContainerStart(ctx, backuperCntr.ID, container.StartOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to start backuper %s - %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) BuildAll(ctx context.Context) error {
+	for tag, tmpl := range map[string]*Template{
+		mngr.labels.backuperTag:    mngr.tmpls.Backuper,
+		mngr.labels.forceBackupTag: mngr.tmpls.ForceBackup,
+		mngr.labels.restoreTag:     mngr.tmpls.Restore,
+	} {
+		bInfo, _, _, _, err := tmpl.CreateConfig()
+		if err != nil {
+			return err
+		}
+
+		if bInfo != nil {
+			fmt.Printf("Building %s\n", tag)
+
+			err = mngr.buildImage(ctx, bInfo, tag)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) BuildBackuper(ctx context.Context) error {
+	bInfo, _, _, _, err := mngr.tmpls.Backuper.CreateConfig()
+	if err != nil {
+		return err
+	}
+
+	if bInfo != nil {
+		fmt.Printf("Building %s\n", mngr.labels.backuperTag)
+
+		err = mngr.buildImage(ctx, bInfo, mngr.labels.backuperTag)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) BuildRestore(ctx context.Context) error {
+	bInfo, _, _, _, err := mngr.tmpls.Restore.CreateConfig()
+	if err != nil {
+		return err
+	}
+
+	if bInfo != nil {
+		fmt.Printf("Building %s\n", mngr.labels.restoreTag)
+
+		err = mngr.buildImage(ctx, bInfo, mngr.labels.restoreTag)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) BuildForce(ctx context.Context) error {
+	bInfo, _, _, _, err := mngr.tmpls.ForceBackup.CreateConfig()
+	if err != nil {
+		return err
+	}
+
+	if bInfo != nil {
+		fmt.Printf("Building %s\n", mngr.labels.forceBackupTag)
+
+		err = mngr.buildImage(ctx, bInfo, mngr.labels.forceBackupTag)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) StopBackuper(ctx context.Context, name string) error {
+	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
+	if err != nil {
+		return err
+	}
+
+	if cntr == nil {
+		return fmt.Errorf("backup container '%s' is stopped or doesn't exist", name)
+	}
+
+	fmt.Printf("Stopping '%s' backup container\n", name)
+
+	return mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+}
+
+func (mngr *ContainerManager) StopAll(ctx context.Context) error {
+	backupers, err := mngr.listContainersWithLabel(ctx, mngr.labels.backuperName, false)
+	if err != nil {
+		return err
+	}
+
+	for _, backuper := range backupers {
+		fmt.Printf("Stopping '%s' backup container\n", backuper.Labels[mngr.labels.backuperName])
+
+		err := mngr.docker.ContainerStop(ctx, backuper.ID, container.StopOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) StartBackuper(ctx context.Context, name string) error {
+	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
+	if err != nil {
+		return err
+	}
+
+	if cntr == nil {
+		return fmt.Errorf("backup container '%s' is stopped or doesn't exist", name)
+	}
+
+	fmt.Printf("Starting '%s' backup container\n", name)
+
+	return mngr.docker.ContainerStart(ctx, cntr.ID, container.StartOptions{})
+}
+
+func (mngr *ContainerManager) StartAll(ctx context.Context) error {
+	backupers, err := mngr.listContainersWithLabel(ctx, mngr.labels.backuperName, true)
+	if err != nil {
+		return err
+	}
+
+	for _, backuper := range backupers {
+		fmt.Printf("Starting '%s' backup container\n", backuper.Labels[mngr.labels.backuperName])
+
+		err := mngr.docker.ContainerStart(ctx, backuper.ID, container.StartOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) PullBackuper(ctx context.Context) error {
+	if len(mngr.tmpls.Backuper.Image) == 0 {
+		return fmt.Errorf("no image in template")
+	}
+
+	return mngr.pullImage(ctx, mngr.tmpls.Backuper.Image)
+}
+
+func (mngr *ContainerManager) PullRestore(ctx context.Context) error {
+	if len(mngr.tmpls.Restore.Image) == 0 {
+		return fmt.Errorf("no image in template")
+	}
+
+	return mngr.pullImage(ctx, mngr.tmpls.Restore.Image)
+}
+
+func (mngr *ContainerManager) PullForce(ctx context.Context) error {
+	if len(mngr.tmpls.ForceBackup.Image) == 0 {
+		return fmt.Errorf("no image in template")
+	}
+
+	return mngr.pullImage(ctx, mngr.tmpls.ForceBackup.Image)
+}
+
+func (mngr *ContainerManager) PullAll(ctx context.Context) error {
+	for _, tmpl := range []*Template{mngr.tmpls.Backuper, mngr.tmpls.ForceBackup, mngr.tmpls.Restore} {
+		if len(tmpl.Image) == 0 {
+			continue
+		}
+
+		err := mngr.pullImage(ctx, mngr.tmpls.Backuper.Image)
+		if err != nil {
+			return err
 		}
 	}
 

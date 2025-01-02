@@ -32,6 +32,13 @@ type buildRespLine struct {
 	Stream      string
 }
 
+type pullRespLine struct {
+	Message  string
+	Status   string
+	Id       string
+	Progress string
+}
+
 func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label string, searchAll bool) ([]types.Container, error) {
 	var opts container.ListOptions
 
@@ -136,6 +143,11 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 		if err != nil {
 			return "", err
 		}
+	} else {
+		err := mngr.pullImage(ctx, cntrCfg.Image)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, "")
@@ -150,6 +162,58 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 	}
 
 	return cntrId, nil
+}
+
+func (mngr *ContainerManager) pullImage(ctx context.Context, tag string) error {
+	needPull := true
+
+	if strings.Index(tag, ":") == -1 {
+		tag = tag + ":latest"
+	}
+
+	localImages, err := mngr.docker.ImageList(ctx, image.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("image list failed: %w", err)
+	}
+
+imgLoop:
+	for _, localImg := range localImages {
+		for _, localTag := range localImg.RepoTags {
+			if localTag == tag {
+				needPull = false
+				break imgLoop
+			}
+		}
+	}
+
+	if !needPull {
+		return nil
+	}
+
+	resp, err := mngr.docker.ImagePull(ctx, tag, image.PullOptions{})
+	if resp != nil {
+		defer resp.Close()
+	}
+
+	dec := json.NewDecoder(resp)
+
+	for {
+		var line pullRespLine
+		if err := dec.Decode(&line); err == io.EOF {
+			break
+		} else if err != nil {
+			return fmt.Errorf("cant decode pull output as json - %w", err)
+		}
+
+		if len(line.Message) > 0 {
+			fmt.Printf("pull: %s\n", line.Message)
+		} else {
+			fmt.Printf("pull: %s: %s %s", line.Id, line.Status, line.Progress)
+		}
+
+	}
+
+	return err
 }
 
 func (mngr *ContainerManager) buildImage(ctx context.Context, buildInfo *BuildInfo, tag string) error {
@@ -227,7 +291,7 @@ imgLoop:
 }
 
 func (mngr *ContainerManager) startBackuper(ctx context.Context, cfg *Template) error {
-	cntrId, err := mngr.createContainer(ctx, cfg, mngr.labels.backuper)
+	cntrId, err := mngr.createContainer(ctx, cfg, mngr.labels.backuperTag)
 	if err != nil {
 		return err
 	}
