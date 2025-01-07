@@ -17,31 +17,31 @@ import (
 )
 
 type labels struct {
-	backupName            string
-	backupPath            string
-	backupNetwork         string
-	backupEnvPrefix       string
-	backupConsistencyHash string
+	backupName      string
+	backupPath      string
+	backupNetwork   string
+	backupEnvPrefix string
 
-	backuperName   string
-	backuperTag    string
-	forceBackupTag string
-	restoreTag     string
+	backuperName            string
+	backuperTag             string
+	backuperConsistencyHash string
+	forceBackupTag          string
+	restoreTag              string
 }
 
 func prepareLabels(prefix string) labels {
 	backup := prefix + ".backup"
 	return labels{
-		backupName:            backup + ".name",
-		backupPath:            backup + ".path",
-		backupNetwork:         backup + ".network",
-		backupEnvPrefix:       backup + ".env.",
-		backupConsistencyHash: backup + ".consistencyhash",
+		backupName:      backup + ".name",
+		backupPath:      backup + ".path",
+		backupNetwork:   backup + ".network",
+		backupEnvPrefix: backup + ".env.",
 
-		backuperName:   prefix + ".backuper" + ".name",
-		backuperTag:    prefix + ".backuper",
-		forceBackupTag: prefix + ".forcebackup",
-		restoreTag:     prefix + ".restore",
+		backuperName:            prefix + ".backuper" + ".name",
+		backuperTag:             prefix + ".backuper",
+		backuperConsistencyHash: prefix + ".backuper" + ".consistencyhash",
+		forceBackupTag:          prefix + ".forcebackup",
+		restoreTag:              prefix + ".restore",
 	}
 }
 
@@ -188,7 +188,7 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 
 	hash := backuperCfg.Hash()
 
-	backuperCfg.Labels[mngr.labels.backupConsistencyHash] = hash
+	backuperCfg.Labels[mngr.labels.backuperConsistencyHash] = hash
 
 	return mngr.startBackuper(ctx, backuperCfg)
 }
@@ -207,7 +207,7 @@ func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, back
 
 	hash := backuperCfg.Hash()
 
-	backuperHash := backuper.Labels[mngr.labels.backupConsistencyHash]
+	backuperHash := backuper.Labels[mngr.labels.backuperConsistencyHash]
 
 	if hash == backuperHash {
 		log.Println("no need to recreate", backupName)
@@ -365,15 +365,15 @@ func (mngr *ContainerManager) BuildAll(ctx context.Context) error {
 		mngr.labels.forceBackupTag: mngr.tmpls.ForceBackup,
 		mngr.labels.restoreTag:     mngr.tmpls.Restore,
 	} {
-		bInfo, _, _, _, err := tmpl.CreateConfig()
+		bInfo, cntrCfg, _, _, err := tmpl.CreateConfig(tag)
 		if err != nil {
 			return err
 		}
 
 		if bInfo != nil {
-			fmt.Printf("Building %s\n", tag)
+			fmt.Printf("Building %s\n", cntrCfg.Image)
 
-			err = mngr.buildImage(ctx, bInfo, tag)
+			err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
 			if err != nil {
 				return err
 			}
@@ -384,15 +384,15 @@ func (mngr *ContainerManager) BuildAll(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) BuildBackuper(ctx context.Context) error {
-	bInfo, _, _, _, err := mngr.tmpls.Backuper.CreateConfig()
+	bInfo, cntrCfg, _, _, err := mngr.tmpls.Backuper.CreateConfig(mngr.labels.backuperTag)
 	if err != nil {
 		return err
 	}
 
 	if bInfo != nil {
-		fmt.Printf("Building %s\n", mngr.labels.backuperTag)
+		fmt.Printf("Building %s\n", cntrCfg.Image)
 
-		err = mngr.buildImage(ctx, bInfo, mngr.labels.backuperTag)
+		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
 		if err != nil {
 			return err
 		}
@@ -402,15 +402,15 @@ func (mngr *ContainerManager) BuildBackuper(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) BuildRestore(ctx context.Context) error {
-	bInfo, _, _, _, err := mngr.tmpls.Restore.CreateConfig()
+	bInfo, cntrCfg, _, _, err := mngr.tmpls.Restore.CreateConfig(mngr.labels.restoreTag)
 	if err != nil {
 		return err
 	}
 
 	if bInfo != nil {
-		fmt.Printf("Building %s\n", mngr.labels.restoreTag)
+		fmt.Printf("Building %s\n", cntrCfg.Image)
 
-		err = mngr.buildImage(ctx, bInfo, mngr.labels.restoreTag)
+		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
 		if err != nil {
 			return err
 		}
@@ -420,15 +420,15 @@ func (mngr *ContainerManager) BuildRestore(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) BuildForce(ctx context.Context) error {
-	bInfo, _, _, _, err := mngr.tmpls.ForceBackup.CreateConfig()
+	bInfo, cntrCfg, _, _, err := mngr.tmpls.ForceBackup.CreateConfig(mngr.labels.forceBackupTag)
 	if err != nil {
 		return err
 	}
 
 	if bInfo != nil {
-		fmt.Printf("Building %s\n", mngr.labels.forceBackupTag)
+		fmt.Printf("Building %s\n", cntrCfg.Image)
 
-		err = mngr.buildImage(ctx, bInfo, mngr.labels.forceBackupTag)
+		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
 		if err != nil {
 			return err
 		}

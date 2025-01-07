@@ -172,7 +172,7 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 	return &newTmpl
 }
 
-func (tmpl *Template) CreateConfig() (*BuildInfo, *container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
 	var (
 		environment map[string]string
 	)
@@ -231,7 +231,9 @@ func (tmpl *Template) CreateConfig() (*BuildInfo, *container.Config, *container.
 	var netCfg *network.NetworkingConfig
 
 	if len(tmpl.Networks) != 0 {
-		netCfg = &network.NetworkingConfig{}
+		netCfg = &network.NetworkingConfig{
+			EndpointsConfig: make(map[string]*network.EndpointSettings),
+		}
 
 		for _, netName := range tmpl.Networks {
 			netCfg.EndpointsConfig[netName] = nil
@@ -241,6 +243,10 @@ func (tmpl *Template) CreateConfig() (*BuildInfo, *container.Config, *container.
 	var buildInfo *BuildInfo
 	if len(tmpl.Build.Data.Context) > 0 || len(tmpl.Build.Data.Dockerfile) > 0 {
 		buildInfo = &tmpl.Build
+
+		if len(cntrCfg.Image) == 0 {
+			cntrCfg.Image = tag
+		}
 	}
 
 	return buildInfo, cntrCfg, hostCfg, netCfg, nil

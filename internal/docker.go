@@ -127,19 +127,13 @@ func (mngr *ContainerManager) getContainerByLabelValue(ctx context.Context, labe
 }
 
 func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template, tag string) (string, error) {
-	buildInfo, cntrCfg, hstCfg, netCfg, err := cfg.CreateConfig()
+	buildInfo, cntrCfg, hstCfg, netCfg, err := cfg.CreateConfig(tag)
 	if err != nil {
 		return "", err
 	}
 
 	if buildInfo != nil {
-		if len(cntrCfg.Image) > 0 {
-			tag = cntrCfg.Image
-		} else {
-			cntrCfg.Image = tag
-		}
-
-		err = mngr.buildImage(ctx, buildInfo, tag)
+		err = mngr.buildImage(ctx, buildInfo, cntrCfg.Image)
 		if err != nil {
 			return "", err
 		}
