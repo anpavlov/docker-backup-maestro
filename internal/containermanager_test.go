@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"io"
 	"maps"
 	"slices"
 	"strings"
@@ -251,6 +252,7 @@ func (tm *testMngr) expectListenEvents() {
 	tm.docker.EXPECT().Events(mock.Anything, mock.Anything).Return(tm.eventsChan, tm.errChan)
 }
 
+// TODo pass name to set label on backuper
 func (tm *testMngr) expectCreateAndStart(t *testing.T, tmpl *Template, tag string) {
 	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
 	require.NoError(t, err)
@@ -261,6 +263,52 @@ func (tm *testMngr) expectCreateAndStart(t *testing.T, tmpl *Template, tag strin
 	}
 
 	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{{RepoTags: []string{img}}}, nil)
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, nil, nil).Return(container.CreateResponse{ID: "hello"}, nil)
+	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+}
+
+// TODO: test pull fail in separate test, no ezpectpullfail func
+func (tm *testMngr) expectPullCreateAndStart(t *testing.T, tmpl *Template, tag string) {
+	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
+	require.NoError(t, err)
+
+	img := cntrCfg.Image
+	if strings.Contains(img, ":") {
+		img += ":latest"
+	}
+
+	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{}, nil)
+
+	resp := strings.NewReader("")
+	tm.docker.EXPECT().ImagePull(mock.Anything, img, mock.Anything).Return(io.NopCloser(resp), nil)
+
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, nil, nil).Return(container.CreateResponse{ID: "hello"}, nil)
+	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+}
+
+func (tm *testMngr) expectBuildCreateAndStart(t *testing.T, tmpl *Template, tag string) {
+	buildInfo, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
+	require.NoError(t, err)
+	require.NotNil(t, buildInfo)
+
+	img := cntrCfg.Image
+	if strings.Contains(img, ":") {
+		img += ":latest"
+	}
+
+	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{}, nil)
+
+	opts := types.ImageBuildOptions{
+		Tags: []string{img},
+	}
+
+	if len(buildInfo.Data.Dockerfile) > 0 {
+		opts.Dockerfile = buildInfo.Data.Dockerfile
+	}
+
+	resp := strings.NewReader("")
+	tm.docker.EXPECT().ImageBuild(mock.Anything, mock.Anything, opts).Return(types.ImageBuildResponse{Body: io.NopCloser(resp)}, nil)
+
 	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, nil, nil).Return(container.CreateResponse{ID: "hello"}, nil)
 	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
 }
