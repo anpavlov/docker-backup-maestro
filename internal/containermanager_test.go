@@ -24,6 +24,10 @@ import (
 
 const testDataPath = "/data"
 
+type CallUnsetter interface {
+	Unset() *mock.Call
+}
+
 type testMngr struct {
 	mngr               *ContainerManager
 	docker             *mocks.DockerApi
@@ -32,12 +36,15 @@ type testMngr struct {
 	stoppedBackupers   map[string]types.Container
 	stoppedBackupCntrs map[string]types.Container
 
+	listCalls []CallUnsetter
+
 	eventsChan chan events.Message
 	errChan    chan error
 }
 
 func genBackupCntr(mngr *ContainerManager, name string) types.Container {
 	return types.Container{
+		ID: "backupid" + name,
 		Labels: map[string]string{
 			mngr.labels.backupName: name,
 			mngr.labels.backupPath: testDataPath,
@@ -46,9 +53,14 @@ func genBackupCntr(mngr *ContainerManager, name string) types.Container {
 }
 
 func genBackuper(mngr *ContainerManager, name string) types.Container {
-	hash := mngr.tmpls.Backuper.Hash()
+	tmpl := mngr.tmpls.Backuper.Overlay(&Template{
+		Labels:  map[string]string{mngr.labels.backuperName: name},
+		Volumes: []string{"/data:/data:ro"},
+	})
+	hash := tmpl.Hash()
 
 	return types.Container{
+		ID: "backuperid" + name,
 		Labels: map[string]string{
 			mngr.labels.backuperName:            name,
 			mngr.labels.backuperConsistencyHash: hash,
@@ -57,43 +69,28 @@ func genBackuper(mngr *ContainerManager, name string) types.Container {
 
 }
 
-func newTestMngr(t *testing.T, backupCntrs []string, backupers []string, tmpls *UserTemplates) testMngr {
+func newTestMngr(t *testing.T, backupCntrs []string, backupers []string, tmpls UserTemplates) testMngr {
 	var cfg Config
 	err := env.ParseWithOptions(&cfg, env.Options{Environment: map[string]string{}})
 	require.NoError(t, err)
 
 	docker := mocks.NewDockerApi(t)
 
-	defaultTmpl := Template{
-		Image: "alpine",
-	}
-	if tmpls == nil {
-		tmpls = &UserTemplates{
-			Backuper:    &Template{},
-			Restore:     &Template{},
-			ForceBackup: &Template{},
-		}
-
-		require.NoError(t, deepcopy.Copy(tmpls.Backuper, defaultTmpl))
-		require.NoError(t, deepcopy.Copy(tmpls.Restore, defaultTmpl))
-		require.NoError(t, deepcopy.Copy(tmpls.ForceBackup, defaultTmpl))
-	} else {
-		if tmpls.Backuper == nil {
-			t.Fatal("Backuper template is empty")
-		}
-
-		if tmpls.ForceBackup == nil {
-			tmpls.ForceBackup = &Template{}
-			require.NoError(t, deepcopy.Copy(tmpls.ForceBackup, tmpls.Backuper))
-		}
-
-		if tmpls.Restore == nil {
-			tmpls.Restore = &Template{}
-			require.NoError(t, deepcopy.Copy(tmpls.Restore, tmpls.Backuper))
-		}
+	if tmpls.Backuper == nil {
+		t.Fatal("Backuper template is empty")
 	}
 
-	mngr := NewContainerManager(docker, *tmpls, cfg)
+	if tmpls.ForceBackup == nil {
+		tmpls.ForceBackup = &Template{}
+		require.NoError(t, deepcopy.Copy(tmpls.ForceBackup, tmpls.Backuper))
+	}
+
+	if tmpls.Restore == nil {
+		tmpls.Restore = &Template{}
+		require.NoError(t, deepcopy.Copy(tmpls.Restore, tmpls.Backuper))
+	}
+
+	mngr := NewContainerManager(docker, tmpls, cfg)
 
 	tst := testMngr{
 		mngr:            mngr,
@@ -110,6 +107,8 @@ func newTestMngr(t *testing.T, backupCntrs []string, backupers []string, tmpls *
 		tst.liveBackupers[name] = genBackuper(mngr, name)
 	}
 
+	tst.expectCntrList()
+
 	return tst
 }
 
@@ -119,23 +118,23 @@ func (tm *testMngr) expectCntrList() {
 	stoppedBackupCntrs := slices.Collect(maps.Values(tm.stoppedBackupCntrs))
 	stoppedBackupers := slices.Collect(maps.Values(tm.stoppedBackupers))
 
-	tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+	tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName}),
-	}).Return(liveBackupers, nil).Maybe()
+	}).Return(liveBackupers, nil).Maybe())
 
-	tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+	tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 		All:     true,
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName}),
-	}).Return(append(liveBackupers, stoppedBackupers...), nil).Maybe()
+	}).Return(append(liveBackupers, stoppedBackupers...), nil).Maybe())
 
-	tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+	tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName}),
-	}).Return(liveBackupCntrs, nil).Maybe()
+	}).Return(liveBackupCntrs, nil).Maybe())
 
-	tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+	tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 		All:     true,
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName}),
-	}).Return(append(liveBackupCntrs, stoppedBackupCntrs...), nil).Maybe()
+	}).Return(append(liveBackupCntrs, stoppedBackupCntrs...), nil).Maybe())
 
 	filterLabelVal := func(label string, name string) func(cntr types.Container) bool {
 		return func(cntr types.Container) bool {
@@ -145,104 +144,95 @@ func (tm *testMngr) expectCntrList() {
 	}
 
 	for name, cntr := range tm.liveBackupCntrs {
-		tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+		tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 			Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-		}).Return([]types.Container{cntr}, nil).Maybe()
+		}).Return([]types.Container{cntr}, nil).Maybe())
 
-		tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+		tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 			All:     true,
 			Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-		}).Return([]types.Container{cntr}, nil).Maybe()
+		}).Return([]types.Container{cntr}, nil).Maybe())
 
 		// if no backuper (live or stopped) configured with same name, expect backuper list with this name to empty list
 		if slices.IndexFunc(liveBackupers, filterLabelVal(tm.mngr.labels.backuperName, name)) == -1 &&
 			slices.IndexFunc(stoppedBackupers, filterLabelVal(tm.mngr.labels.backuperName, name)) == -1 {
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				All:     true,
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 		}
 	}
 
 	for name, cntr := range tm.stoppedBackupCntrs {
-		tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+		tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 			All:     true,
 			Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-		}).Return([]types.Container{cntr}, nil).Maybe()
+		}).Return([]types.Container{cntr}, nil).Maybe())
 
 		if slices.IndexFunc(liveBackupers, filterLabelVal(tm.mngr.labels.backuperName, name)) == -1 &&
 			slices.IndexFunc(stoppedBackupers, filterLabelVal(tm.mngr.labels.backuperName, name)) == -1 {
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				All:     true,
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 		}
 	}
 
 	for name, cntr := range tm.liveBackupers {
-		tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+		tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 			Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-		}).Return([]types.Container{cntr}, nil).Maybe()
+		}).Return([]types.Container{cntr}, nil).Maybe())
 
-		tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+		tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 			All:     true,
 			Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-		}).Return([]types.Container{cntr}, nil).Maybe()
+		}).Return([]types.Container{cntr}, nil).Maybe())
 
 		if slices.IndexFunc(liveBackupCntrs, filterLabelVal(tm.mngr.labels.backupName, name)) == -1 &&
 			slices.IndexFunc(stoppedBackupCntrs, filterLabelVal(tm.mngr.labels.backupName, name)) == -1 {
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				All:     true,
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 		}
 	}
 
 	for name, cntr := range tm.stoppedBackupers {
-		tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+		tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 			All:     true,
 			Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backuperName + "=" + name}),
-		}).Return([]types.Container{cntr}, nil).Maybe()
+		}).Return([]types.Container{cntr}, nil).Maybe())
 
 		if slices.IndexFunc(liveBackupCntrs, filterLabelVal(tm.mngr.labels.backupName, name)) == -1 &&
 			slices.IndexFunc(stoppedBackupCntrs, filterLabelVal(tm.mngr.labels.backupName, name)) == -1 {
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 
-			tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
+			tm.listCalls = append(tm.listCalls, tm.docker.EXPECT().ContainerList(mock.Anything, container.ListOptions{
 				All:     true,
 				Filters: filters.NewArgs(filters.KeyValuePair{Key: "label", Value: tm.mngr.labels.backupName + "=" + name}),
-			}).Return([]types.Container{}, nil).Maybe()
+			}).Return([]types.Container{}, nil).Maybe())
 		}
 	}
 }
 
-func (tm *testMngr) expectImageList() {
-	imgs := []string{}
-	for _, tmpl := range []*Template{tm.mngr.tmpls.Backuper, tm.mngr.tmpls.ForceBackup, tm.mngr.tmpls.Restore} {
-		if len(tmpl.Image) > 0 && slices.Index(imgs, tmpl.Image) == -1 {
-			img := tmpl.Image
-			if !strings.Contains(img, ":") {
-				img += ":latest"
-			}
-			imgs = append(imgs, tmpl.Image)
-		}
+func (tm *testMngr) resetExpectCntrList() {
+	for _, call := range tm.listCalls {
+		call.Unset()
 	}
-
-	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{{RepoTags: imgs}}, nil)
 }
 
 func (tm *testMngr) expectListenEvents() {
@@ -252,98 +242,198 @@ func (tm *testMngr) expectListenEvents() {
 	tm.docker.EXPECT().Events(mock.Anything, mock.Anything).Return(tm.eventsChan, tm.errChan)
 }
 
-// TODo pass name to set label on backuper
-func (tm *testMngr) expectCreateAndStart(t *testing.T, tmpl *Template, tag string) {
-	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
-	require.NoError(t, err)
+func (tm *testMngr) startBackupCntr(name string) {
+	tm.liveBackupCntrs[name] = genBackupCntr(tm.mngr, name)
 
-	img := cntrCfg.Image
-	if strings.Contains(img, ":") {
-		img += ":latest"
-	}
-
-	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{{RepoTags: []string{img}}}, nil)
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, nil, nil).Return(container.CreateResponse{ID: "hello"}, nil)
-	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-}
-
-// TODO: test pull fail in separate test, no ezpectpullfail func
-func (tm *testMngr) expectPullCreateAndStart(t *testing.T, tmpl *Template, tag string) {
-	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
-	require.NoError(t, err)
-
-	img := cntrCfg.Image
-	if strings.Contains(img, ":") {
-		img += ":latest"
-	}
-
-	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{}, nil)
-
-	resp := strings.NewReader("")
-	tm.docker.EXPECT().ImagePull(mock.Anything, img, mock.Anything).Return(io.NopCloser(resp), nil)
-
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, nil, nil).Return(container.CreateResponse{ID: "hello"}, nil)
-	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-}
-
-func (tm *testMngr) expectBuildCreateAndStart(t *testing.T, tmpl *Template, tag string) {
-	buildInfo, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
-	require.NoError(t, err)
-	require.NotNil(t, buildInfo)
-
-	img := cntrCfg.Image
-	if strings.Contains(img, ":") {
-		img += ":latest"
-	}
-
-	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{}, nil)
-
-	opts := types.ImageBuildOptions{
-		Tags: []string{img},
-	}
-
-	if len(buildInfo.Data.Dockerfile) > 0 {
-		opts.Dockerfile = buildInfo.Data.Dockerfile
-	}
-
-	resp := strings.NewReader("")
-	tm.docker.EXPECT().ImageBuild(mock.Anything, mock.Anything, opts).Return(types.ImageBuildResponse{Body: io.NopCloser(resp)}, nil)
-
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, nil, nil).Return(container.CreateResponse{ID: "hello"}, nil)
-	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-}
-
-func newEmptyTestMngr(t *testing.T) testMngr {
-	return newTestMngr(t, nil, nil, nil)
-}
-
-func TestExample(t *testing.T) {
-	tm := newTestMngr(t, []string{"example"}, nil, nil)
-
+	tm.resetExpectCntrList()
 	tm.expectCntrList()
 
+	tm.eventsChan <- events.Message{
+		Action: events.ActionStart,
+		Actor: events.Actor{
+			Attributes: map[string]string{tm.mngr.labels.backupName: name},
+		},
+	}
+}
+
+func (tm *testMngr) removeBackupCntr(name string) {
+	delete(tm.liveBackupCntrs, name)
+
+	tm.resetExpectCntrList()
+	tm.expectCntrList()
+
+	tm.eventsChan <- events.Message{
+		Action: events.ActionDie,
+		Actor: events.Actor{
+			Attributes: map[string]string{tm.mngr.labels.backupName: name},
+		},
+	}
+}
+
+func (tm *testMngr) expectBackuperCreateAndStart(t *testing.T, tmpl *Template, tag string, name string) {
+	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tag)
+	require.NoError(t, err)
+
+	tmpl = tmpl.Overlay(&Template{
+		Labels:  map[string]string{tm.mngr.labels.backuperName: name},
+		Volumes: []string{"/data:/data:ro"},
+	})
+	hash := tmpl.Hash()
+
+	if cntrCfg.Labels == nil {
+		cntrCfg.Labels = make(map[string]string)
+	}
+	cntrCfg.Labels[tm.mngr.labels.backuperName] = name
+	cntrCfg.Labels[tm.mngr.labels.backuperConsistencyHash] = hash
+
+	hstCfg.Binds = append(hstCfg.Binds, "/data:/data:ro")
+
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: "hello"}, nil)
+	tm.docker.EXPECT().ContainerStart(mock.Anything, "hello", mock.Anything).Return(nil)
+
+	// tm.liveBackupers[name] = genBackuper(tm.mngr, name)
+	// tm.resetExpectCntrList()
+	// tm.expectCntrList()
+}
+
+func (tm *testMngr) expectImageList(tags []string) {
+	imgs := []image.Summary{}
+
+	for _, tag := range tags {
+		imgs = append(imgs, image.Summary{RepoTags: []string{tag}})
+	}
+
+	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return(imgs, nil)
+}
+
+func (tm *testMngr) expectBackuperRemove(t *testing.T, name string) {
+	tm.docker.EXPECT().ContainerStop(mock.Anything, "backuperid"+name, mock.Anything).Return(nil)
+	tm.docker.EXPECT().ContainerRemove(mock.Anything, "backuperid"+name, mock.Anything).Return(nil)
+}
+
+func (tm *testMngr) expectBuild(tag string) {
+	resp := strings.NewReader("")
+	tm.docker.EXPECT().ImageBuild(mock.Anything, mock.Anything, types.ImageBuildOptions{Tags: []string{tag}}).Return(types.ImageBuildResponse{Body: io.NopCloser(resp)}, nil)
+}
+
+func (tm *testMngr) expectPull(tag string) {
+	resp := strings.NewReader("")
+	tm.docker.EXPECT().ImagePull(mock.Anything, tag, mock.Anything).Return(io.NopCloser(resp), nil)
+}
+
+func TestNewBackuperOnStart(t *testing.T) {
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Image: "alpine"}})
+
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	tm.docker.EXPECT().Events(mock.Anything, mock.Anything).Return(make(<-chan events.Message), make(<-chan error))
+	tm.expectListenEvents()
+	tm.expectImageList([]string{"alpine:latest"})
 
-	tm.docker.EXPECT().ImageList(mock.Anything, mock.Anything).Return([]image.Summary{{RepoTags: []string{"alpine:latest"}}}, nil)
-
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: "hello"}, nil)
-	tm.docker.EXPECT().ContainerStart(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-
-	// docker.EXPECT().ContainerList(mock.Anything, mock.Anything).Run(func(ctx context.Context, options container.ListOptions) {
-	// 	fmt.Println("fallback called")
-	// }).Return([]types.Container{}, nil)
+	tm.expectBackuperCreateAndStart(t, tm.mngr.tmpls.Backuper, tm.mngr.labels.backuperTag, "example")
 
 	go func() {
 		require.NoError(t, tm.mngr.Run(ctx))
 	}()
 
-	<-time.After(3 * time.Second)
+	<-time.After(time.Second)
+}
 
-	cancel()
+// TODO test restore when taget backup is created but not run
 
-	// for _, c := range tm.docker.Calls {
-	// 	fmt.Println(c)
-	// }
+func TestNewBackupOnline(t *testing.T) {
+	tm := newTestMngr(t, nil, nil, UserTemplates{Backuper: &Template{Image: "alpine"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+	tm.expectImageList([]string{"alpine:latest"})
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
+
+	tm.expectBackuperCreateAndStart(t, tm.mngr.tmpls.Backuper, tm.mngr.labels.backuperTag, "example")
+	tm.startBackupCntr("example")
+
+	<-time.After(time.Second)
+}
+
+func TestSyncBackuperNoop(t *testing.T) {
+	tm := newTestMngr(t, []string{"example"}, []string{"example"}, UserTemplates{Backuper: &Template{Image: "alpine"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
+}
+
+func TestDropDanglingBackuper(t *testing.T) {
+	tm := newTestMngr(t, nil, []string{"example"}, UserTemplates{Backuper: &Template{Image: "alpine"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+
+	tm.expectBackuperRemove(t, "example")
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
+}
+
+func TestBuildBackuper(t *testing.T) {
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{Data: struct {
+		Context    string
+		Dockerfile string
+	}{Context: "."}}}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+	tm.expectImageList(nil)
+
+	tm.expectBuild(tm.mngr.labels.backuperTag + ":latest")
+
+	tm.expectBackuperCreateAndStart(t, tm.mngr.tmpls.Backuper, tm.mngr.labels.backuperTag, "example")
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
+}
+
+func TestNoRebuildBackuper(t *testing.T) {
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{Data: struct {
+		Context    string
+		Dockerfile string
+	}{Context: "."}}}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+	tm.expectImageList([]string{tm.mngr.labels.backuperTag + ":latest"})
+
+	tm.expectBackuperCreateAndStart(t, tm.mngr.tmpls.Backuper, tm.mngr.labels.backuperTag, "example")
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
 }

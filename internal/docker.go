@@ -161,7 +161,7 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 func (mngr *ContainerManager) pullImage(ctx context.Context, tag string) error {
 	needPull := true
 
-	if strings.Index(tag, ":") == -1 {
+	if !strings.Contains(tag, ":") {
 		tag = tag + ":latest"
 	}
 
@@ -212,6 +212,10 @@ imgLoop:
 
 func (mngr *ContainerManager) buildImage(ctx context.Context, buildInfo *BuildInfo, tag string) error {
 	needBuild := true
+
+	if !strings.Contains(tag, ":") {
+		tag = tag + ":latest"
+	}
 
 	localImages, err := mngr.docker.ImageList(ctx, image.ListOptions{})
 	if err != nil {

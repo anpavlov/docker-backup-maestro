@@ -236,7 +236,6 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 		Labels: map[string]string{
 			mngr.labels.backuperName: name,
 		},
-		Environment: map[string]string{},
 	}
 
 	volumes := []string{}
@@ -276,6 +275,11 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	for label, value := range cntr.Labels {
 		if strings.HasPrefix(label, mngr.labels.backupEnvPrefix) {
 			envName, _ := strings.CutPrefix(label, mngr.labels.backupEnvPrefix)
+
+			if backuperBaseCfg.Environment == nil {
+				backuperBaseCfg.Environment = make(StringMapOrArray)
+			}
+
 			backuperBaseCfg.Environment[envName] = value
 		}
 	}
