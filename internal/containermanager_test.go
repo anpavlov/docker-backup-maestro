@@ -19,7 +19,7 @@ func TestNewBackuperOnStart(t *testing.T) {
 	tm.expectListenEvents()
 	tm.expectImageList([]string{"alpine:latest"})
 
-	tm.expectBackuperCreateAndStart(t, "example")
+	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
 	go func() {
 		require.NoError(t, tm.mngr.Run(ctx))
@@ -43,7 +43,7 @@ func TestNewBackupOnline(t *testing.T) {
 	<-time.After(time.Second)
 
 	tm.expectImageList([]string{"alpine:latest"})
-	tm.expectBackuperCreateAndStart(t, "example")
+	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 	tm.startBackupCntr("example")
 
 	<-time.After(time.Second)
@@ -137,7 +137,7 @@ func TestBuildBackuper(t *testing.T) {
 
 	tm.expectBuild(tm.mngr.labels.backuperTag + ":latest")
 
-	tm.expectBackuperCreateAndStart(t, "example")
+	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
 	go func() {
 		require.NoError(t, tm.mngr.Run(ctx))
@@ -158,7 +158,7 @@ func TestNoRebuildBackuper(t *testing.T) {
 	tm.expectListenEvents()
 	tm.expectImageList([]string{tm.mngr.labels.backuperTag + ":latest"})
 
-	tm.expectBackuperCreateAndStart(t, "example")
+	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
 	go func() {
 		require.NoError(t, tm.mngr.Run(ctx))
@@ -178,7 +178,7 @@ func TestPullBackuper(t *testing.T) {
 
 	tm.expectPull("alpine:latest")
 
-	tm.expectBackuperCreateAndStart(t, "example")
+	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
 	go func() {
 		require.NoError(t, tm.mngr.Run(ctx))
@@ -204,7 +204,7 @@ func TestRecreateBackuper(t *testing.T) {
 
 	tm.expectImageList([]string{"alpine:latest"})
 
-	tm.expectBackuperCreateAndStart(t, "example")
+	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
 	go func() {
 		require.NoError(t, tm.mngr.Run(ctx))
@@ -295,5 +295,66 @@ func TestRestoreStopped(t *testing.T) {
 	<-time.After(time.Second)
 }
 
-// TODO test env transfer, volumes, networks from labels
-// test tmpl overlay
+func TestNewBackuperUseLabels(t *testing.T) {
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Image: "alpine"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+	tm.expectImageList([]string{"alpine:latest"})
+
+	customLabels := map[string]string{
+		tm.mngr.labels.backupName:                "example",
+		tm.mngr.labels.backupPath:                "/host/path",
+		tm.mngr.labels.backupEnvPrefix + "MYENV": "env_val",
+		tm.mngr.labels.backupNetwork:             "example_net",
+	}
+
+	overlay := &Template{
+		Labels:      map[string]string{tm.mngr.labels.backuperName: "example"},
+		Volumes:     []string{"/host/path:/data:ro"},
+		Environment: map[string]string{"MYENV": "env_val"},
+		Networks:    []string{"example_net"},
+	}
+
+	tm.expectBackuperCreateAndStart(t, "example", customLabels, overlay)
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
+}
+
+func TestNewBackuperLabelsMultipath(t *testing.T) {
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Image: "alpine"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tm.expectListenEvents()
+	tm.expectImageList([]string{"alpine:latest"})
+
+	customLabels := map[string]string{
+		tm.mngr.labels.backupName:           "example",
+		tm.mngr.labels.backupPath + ".dir1": "/host/path1",
+		tm.mngr.labels.backupPath + ".dir2": "/host/path2",
+		tm.mngr.labels.backupPath:           "/host/path3", // should be ignored
+	}
+
+	overlay := &Template{
+		Labels:  map[string]string{tm.mngr.labels.backuperName: "example"},
+		Volumes: []string{"/host/path1:/data/dir1:ro", "/host/path2:/data/dir2:ro"},
+	}
+
+	tm.expectBackuperCreateAndStart(t, "example", customLabels, overlay)
+
+	go func() {
+		require.NoError(t, tm.mngr.Run(ctx))
+	}()
+
+	<-time.After(time.Second)
+}
+
+// test build/pull fail on err log

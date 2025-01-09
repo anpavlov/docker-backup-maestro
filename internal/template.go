@@ -18,9 +18,33 @@ import (
 	composegoutils "github.com/compose-spec/compose-go/v2/utils"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/mattn/go-shellwords"
 	"github.com/tiendc/go-deepcopy"
 	"gopkg.in/yaml.v2"
 )
+
+type ShellCommand []string
+
+func (val *ShellCommand) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var a []string
+	err := unmarshal(&a)
+	if err != nil {
+		var s string
+
+		err := unmarshal(&s)
+		if err != nil {
+			return err
+		}
+
+		*val, err = shellwords.Parse(s)
+		if err != nil {
+			return err
+		}
+	} else {
+		*val = a
+	}
+	return nil
+}
 
 type StringOneOrArray []string
 
@@ -81,8 +105,8 @@ func (val *BuildInfo) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Template struct {
 	Build       BuildInfo
 	Image       string
-	Entrypoint  []string
-	Command     []string
+	Entrypoint  ShellCommand
+	Command     ShellCommand
 	Restart     string
 	EnvFile     StringOneOrArray `yaml:"env_file"`
 	Environment StringMapOrArray
@@ -185,6 +209,8 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 		}
 	}
 
+	// FIXME we already expanded env vars when parsing yaml file. either we do not expand second time here, or we do not expand
+	// on file parsing and do expand individualy every needed field (env, network, labels, etc..)
 	if tmpl.Environment != nil {
 		envMap, err := dotenv.ParseWithLookup(strings.NewReader(strings.Join(composegoutils.GetAsStringList(tmpl.Environment), "\n")), os.LookupEnv)
 		if err != nil {
@@ -209,12 +235,12 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 		Labels: tmpl.Labels,
 	}
 
-	if len(tmpl.Entrypoint) != 0 {
-		cntrCfg.Entrypoint = tmpl.Entrypoint
+	if tmpl.Entrypoint != nil {
+		cntrCfg.Entrypoint = []string(tmpl.Entrypoint)
 	}
 
-	if len(tmpl.Command) != 0 {
-		cntrCfg.Cmd = tmpl.Command
+	if tmpl.Command != nil {
+		cntrCfg.Cmd = []string(tmpl.Command)
 	}
 
 	rst, err := parseRestart(tmpl.Restart)

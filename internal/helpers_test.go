@@ -281,25 +281,36 @@ func (tm *testMngr) removeBackupCntr(name string) {
 	}
 }
 
-func (tm *testMngr) expectBackuperCreateAndStart(t *testing.T, name string) {
+func (tm *testMngr) expectBackuperCreateAndStart(t *testing.T, name string, labels map[string]string, overlay *Template) {
+	if labels != nil {
+		cntr := tm.liveBackupCntrs["example"]
+		cntr.Labels = labels
+		tm.liveBackupCntrs["example"] = cntr
+
+		tm.resetExpectCallList()
+		tm.expectCntrList()
+	}
+
 	tmpl := tm.mngr.tmpls.Backuper
+	if overlay != nil {
+		tmpl = tmpl.Overlay(overlay)
+	} else {
+		tmpl = tmpl.Overlay(&Template{
+			Labels:  map[string]string{tm.mngr.labels.backuperName: name},
+			Volumes: []string{"/data:/data:ro"},
+		})
+	}
+	hash := tmpl.Hash()
+
 	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tm.mngr.labels.backuperTag)
 	require.NoError(t, err)
-
-	// adding info to backuper template so hash equals created with containermanager
-	tmpl = tmpl.Overlay(&Template{
-		Labels:  map[string]string{tm.mngr.labels.backuperName: name},
-		Volumes: []string{"/data:/data:ro"},
-	})
-	hash := tmpl.Hash()
 
 	if cntrCfg.Labels == nil {
 		cntrCfg.Labels = make(map[string]string)
 	}
+
 	cntrCfg.Labels[tm.mngr.labels.backuperName] = name
 	cntrCfg.Labels[tm.mngr.labels.backuperConsistencyHash] = hash
-
-	hstCfg.Binds = append(hstCfg.Binds, "/data:/data:ro")
 
 	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: "hello"}, nil).Once()
 	tm.docker.EXPECT().ContainerStart(mock.Anything, "hello", mock.Anything).Return(nil).Once()
