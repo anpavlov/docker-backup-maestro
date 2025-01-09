@@ -309,7 +309,7 @@ func (mngr *ContainerManager) StartForceBackup(ctx context.Context, name string)
 }
 
 func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template, tag string) error {
-	backuperCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, false)
+	backuperCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
 	if err != nil {
 		return err
 	}
@@ -317,6 +317,7 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 	wasRunning := containerIsAlive(backuperCntr)
 
 	if backuperCntr != nil {
+		log.Printf("stopping backup container %s\n", name)
 		err = mngr.docker.ContainerStop(ctx, backuperCntr.ID, container.StopOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to stop backuper container %s %s - %w", name, backuperCntr.ID, err)
@@ -343,17 +344,20 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 		errChan <- mngr.waitForStop(ctx, cntrId)
 	}()
 
+	log.Printf("starting restore container %s\n", name)
 	err = mngr.docker.ContainerStart(ctx, cntrId, container.StartOptions{})
 	if err != nil {
 		return err
 	}
 
+	log.Printf("wainting restore container %s to finish\n", name)
 	err = <-errChan
 	if err != nil {
 		return err
 	}
 
 	if wasRunning {
+		log.Printf("starting backup container %s\n", name)
 		err = mngr.docker.ContainerStart(ctx, backuperCntr.ID, container.StartOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to start backuper %s - %w", name, err)
@@ -475,13 +479,13 @@ func (mngr *ContainerManager) StopAll(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) StartBackuper(ctx context.Context, name string) error {
-	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
+	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
 	if err != nil {
 		return err
 	}
 
 	if cntr == nil {
-		return fmt.Errorf("backup container '%s' is stopped or doesn't exist", name)
+		return fmt.Errorf("backup container '%s' doesn't exist", name)
 	}
 
 	fmt.Printf("Starting '%s' backup container\n", name)
