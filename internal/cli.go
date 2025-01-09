@@ -57,6 +57,18 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		},
 	}
 
+	var includeStopped bool
+
+	forceBackupAllCmd := &cobra.Command{
+		Use:   "force-backup-all",
+		Short: "Force backup all available containers (optionally include stopped)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mngr.ForceBackupAll(cmd.Context(), includeStopped)
+		},
+	}
+
+	forceBackupAllCmd.Flags().BoolVar(&includeStopped, "include-stopped", false, "include stopped containers")
+
 	buildAllCmd := &cobra.Command{
 		Use:   "build-all",
 		Short: "Build backup restore and force-backup containers",
@@ -155,10 +167,27 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		},
 	}
 
+	var listOpts ListOptions
+
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List containers labeled for backup",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mngr.List(cmd.Context(), listOpts)
+		},
+	}
+
+	listCmd.Flags().BoolVar(&listOpts.All, "all", false, "include stopped containers")
+	listCmd.Flags().BoolVar(&listOpts.Backupers, "backup", false, "list backup containers instead")
+	listCmd.Flags().BoolVar(&listOpts.Restores, "restore", false, "list restore containers instead")
+	listCmd.Flags().BoolVar(&listOpts.ForceBackups, "force-backup", false, "list force-backup containers instead")
+	listCmd.MarkFlagsMutuallyExclusive("backup", "restore", "force-backup")
+
 	rootCmd.AddCommand(
 		restoreCmd,
 		restoreAllCmd,
 		forceBackupCmd,
+		forceBackupAllCmd,
 		buildAllCmd,
 		buildBackuperCmd,
 		buildRestoreCmd,
@@ -171,6 +200,7 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		pullRestoreCmd,
 		pullForceCmd,
 		pullAllCmd,
+		listCmd,
 	)
 
 	return rootCmd

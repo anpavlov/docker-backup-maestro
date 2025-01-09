@@ -313,6 +313,9 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 		return fmt.Errorf("failed to generate config for %s - %w", name, err)
 	}
 
+	delete(oneOffCfg.Labels, mngr.labels.backuperName)
+	oneOffCfg.Labels[tag] = name
+
 	oneOffCfg = tmpl.Overlay(oneOffCfg)
 
 	oneOffCfg.AutoRemove = true
@@ -388,6 +391,29 @@ func (mngr *ContainerManager) ForceBackup(ctx context.Context, name string) erro
 	}
 
 	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag)
+}
+
+func (mngr *ContainerManager) ForceBackupAll(ctx context.Context, includeStopped bool) error {
+	if mngr.tmpls.ForceBackup == nil {
+		return fmt.Errorf("force backup template not set")
+	}
+
+	toBackups, err := mngr.listContainersWithLabel(ctx, mngr.labels.backupName, includeStopped)
+	if err != nil {
+		return err
+	}
+
+	for _, backupCntr := range toBackups {
+		backupName := backupCntr.Labels[mngr.labels.backupName]
+		log.Printf("Running force backup %s\n", backupName)
+
+		err := mngr.oneOffContainerFromTmpl(ctx, backupName, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (mngr *ContainerManager) BuildAll(ctx context.Context) error {
@@ -568,6 +594,53 @@ func (mngr *ContainerManager) PullAll(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+type ListOptions struct {
+	All          bool
+	Backupers    bool
+	Restores     bool
+	ForceBackups bool
+}
+
+func (mngr *ContainerManager) List(ctx context.Context, opts ListOptions) error {
+	label := mngr.labels.backupName
+
+	if opts.Backupers {
+		label = mngr.labels.backuperName
+	}
+
+	if opts.Restores {
+		label = mngr.labels.restoreTag
+	}
+
+	if opts.ForceBackups {
+		label = mngr.labels.forceBackupTag
+	}
+
+	cntrs, err := mngr.listContainersWithLabel(ctx, label, opts.All)
+	if err != nil {
+		return err
+	}
+
+	names := []string{}
+
+	for _, cntr := range cntrs {
+		name := cntr.Labels[label]
+
+		if len(name) == 0 {
+			return fmt.Errorf("failed to get container name, label %s report to maintainer", label)
+		}
+
+		names = append(names, name)
+
+	}
+
+	for _, name := range names {
+		fmt.Println(name)
 	}
 
 	return nil
