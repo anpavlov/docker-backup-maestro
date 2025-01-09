@@ -240,7 +240,7 @@ func TestRestoreOnline(t *testing.T) {
 	tm.docker.EXPECT().Events(mock.Anything, mock.Anything).Return(eventsChan, errChan).Once()
 
 	go func() {
-		tm.mngr.StartRestore(ctx, "example")
+		tm.mngr.Restore(ctx, "example")
 	}()
 
 	<-time.After(time.Second)
@@ -285,7 +285,7 @@ func TestRestoreStopped(t *testing.T) {
 	tm.docker.EXPECT().Events(mock.Anything, mock.Anything).Return(eventsChan, errChan).Once()
 
 	go func() {
-		tm.mngr.StartRestore(ctx, "example")
+		tm.mngr.Restore(ctx, "example")
 	}()
 
 	<-time.After(time.Second)

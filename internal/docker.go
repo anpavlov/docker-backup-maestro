@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,10 +27,9 @@ const (
 )
 
 type buildRespLine struct {
-	Message     string
-	Error       string
-	ErrorDetail string
-	Stream      string
+	Message string
+	Error   string
+	Stream  string
 }
 
 type pullRespLine struct {
@@ -37,6 +37,7 @@ type pullRespLine struct {
 	Status   string
 	Id       string
 	Progress string
+	Error    string
 }
 
 func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label string, searchAll bool) ([]types.Container, error) {
@@ -165,6 +166,8 @@ func (mngr *ContainerManager) pullImage(ctx context.Context, tag string) error {
 		tag = tag + ":latest"
 	}
 
+	log.Printf("pulling %s\n", tag)
+
 	localImages, err := mngr.docker.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("image list failed: %w", err)
@@ -197,6 +200,11 @@ imgLoop:
 			break
 		} else if err != nil {
 			return fmt.Errorf("cant decode pull output as json - %w", err)
+		}
+
+		if len(line.Error) > 0 {
+			fmt.Printf("build error: %s\n", line.Error)
+			return errors.New(line.Error)
 		}
 
 		if len(line.Message) > 0 {
@@ -262,6 +270,10 @@ imgLoop:
 		defer resp.Body.Close()
 	}
 
+	if resp.Body == nil {
+		return err
+	}
+
 	dec := json.NewDecoder(resp.Body)
 
 	for {
@@ -273,7 +285,8 @@ imgLoop:
 		}
 
 		if len(line.Error) > 0 {
-			fmt.Printf("build error: %s %s\n", line.Error, line.ErrorDetail)
+			fmt.Printf("build error: %s\n", line.Error)
+			return errors.New(line.Error)
 		}
 
 		if len(line.Message) > 0 {
