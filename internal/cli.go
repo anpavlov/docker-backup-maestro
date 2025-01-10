@@ -229,6 +229,9 @@ func RunApp() {
 	}
 
 	if !cfg.NoRestoreOverlay {
+		if restoreTmpl == nil {
+			restoreTmpl = &Template{}
+		}
 		restoreTmpl = backuperTmpl.Overlay(restoreTmpl)
 	}
 
@@ -238,6 +241,9 @@ func RunApp() {
 	}
 
 	if !cfg.NoForceBackupOverlay {
+		if forceTmpl == nil {
+			forceTmpl = &Template{}
+		}
 		forceTmpl = backuperTmpl.Overlay(forceTmpl)
 	}
 

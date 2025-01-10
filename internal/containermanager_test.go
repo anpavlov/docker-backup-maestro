@@ -309,11 +309,12 @@ func TestNewBackuperUseLabels(t *testing.T) {
 		tm.mngr.labels.backupPath:                "/host/path",
 		tm.mngr.labels.backupEnvPrefix + "MYENV": "env_val",
 		tm.mngr.labels.backupNetwork:             "example_net",
+		tm.mngr.labels.backupVolume:              "/host/path2:/inside2",
 	}
 
 	overlay := &Template{
 		Labels:      map[string]string{tm.mngr.labels.backuperName: "example"},
-		Volumes:     []string{"/host/path:/data:ro"},
+		Volumes:     []string{"/host/path:/data:ro", "/host/path2:/inside2"},
 		Environment: map[string]string{"MYENV": "env_val"},
 		Networks:    []string{"example_net"},
 	}

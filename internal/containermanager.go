@@ -20,6 +20,7 @@ type labels struct {
 	backupName      string
 	backupPath      string
 	backupNetwork   string
+	backupVolume    string
 	backupEnvPrefix string
 
 	backuperName            string
@@ -35,6 +36,7 @@ func prepareLabels(prefix string) labels {
 		backupName:      backup + ".name",
 		backupPath:      backup + ".path",
 		backupNetwork:   backup + ".network",
+		backupVolume:    backup + ".volume",
 		backupEnvPrefix: backup + ".env.",
 
 		backuperName:            prefix + ".backuper" + ".name",
@@ -268,6 +270,13 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 		}
 
 		volumes = append(volumes, bind)
+	}
+
+	// check for additional volumes
+	for label, value := range cntr.Labels {
+		if strings.HasPrefix(label, mngr.labels.backupVolume) {
+			volumes = append(volumes, value)
+		}
 	}
 
 	backuperBaseCfg.Volumes = volumes
@@ -565,7 +574,7 @@ func (mngr *ContainerManager) PullBackuper(ctx context.Context) error {
 		return fmt.Errorf("no image in template")
 	}
 
-	return mngr.pullImage(ctx, mngr.tmpls.Backuper.Image)
+	return mngr.pullImage(ctx, mngr.tmpls.Backuper.Image, true)
 }
 
 func (mngr *ContainerManager) PullRestore(ctx context.Context) error {
@@ -573,7 +582,7 @@ func (mngr *ContainerManager) PullRestore(ctx context.Context) error {
 		return fmt.Errorf("no image in template")
 	}
 
-	return mngr.pullImage(ctx, mngr.tmpls.Restore.Image)
+	return mngr.pullImage(ctx, mngr.tmpls.Restore.Image, true)
 }
 
 func (mngr *ContainerManager) PullForce(ctx context.Context) error {
@@ -581,7 +590,7 @@ func (mngr *ContainerManager) PullForce(ctx context.Context) error {
 		return fmt.Errorf("no image in template")
 	}
 
-	return mngr.pullImage(ctx, mngr.tmpls.ForceBackup.Image)
+	return mngr.pullImage(ctx, mngr.tmpls.ForceBackup.Image, true)
 }
 
 func (mngr *ContainerManager) PullAll(ctx context.Context) error {
@@ -590,7 +599,7 @@ func (mngr *ContainerManager) PullAll(ctx context.Context) error {
 			continue
 		}
 
-		err := mngr.pullImage(ctx, mngr.tmpls.Backuper.Image)
+		err := mngr.pullImage(ctx, mngr.tmpls.Backuper.Image, true)
 		if err != nil {
 			return err
 		}

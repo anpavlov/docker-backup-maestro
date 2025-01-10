@@ -139,7 +139,7 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 			return "", err
 		}
 	} else {
-		err := mngr.pullImage(ctx, cntrCfg.Image)
+		err := mngr.pullImage(ctx, cntrCfg.Image, false)
 		if err != nil {
 			return "", err
 		}
@@ -159,33 +159,36 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 	return cntrId, nil
 }
 
-func (mngr *ContainerManager) pullImage(ctx context.Context, tag string) error {
+func (mngr *ContainerManager) pullImage(ctx context.Context, tag string, force bool) error {
 	needPull := true
 
 	if !strings.Contains(tag, ":") {
 		tag = tag + ":latest"
 	}
 
-	log.Printf("pulling %s\n", tag)
+	if !force {
 
-	localImages, err := mngr.docker.ImageList(ctx, image.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("image list failed: %w", err)
-	}
+		localImages, err := mngr.docker.ImageList(ctx, image.ListOptions{})
+		if err != nil {
+			return fmt.Errorf("image list failed: %w", err)
+		}
 
-imgLoop:
-	for _, localImg := range localImages {
-		for _, localTag := range localImg.RepoTags {
-			if localTag == tag {
-				needPull = false
-				break imgLoop
+	imgLoop:
+		for _, localImg := range localImages {
+			for _, localTag := range localImg.RepoTags {
+				if localTag == tag {
+					needPull = false
+					break imgLoop
+				}
 			}
+		}
+
+		if !needPull {
+			return nil
 		}
 	}
 
-	if !needPull {
-		return nil
-	}
+	log.Printf("pulling %s\n", tag)
 
 	resp, err := mngr.docker.ImagePull(ctx, tag, image.PullOptions{})
 	if resp != nil {
