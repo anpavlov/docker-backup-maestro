@@ -135,6 +135,40 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		},
 	}
 
+	createCmd := &cobra.Command{
+		Use:   "create name",
+		Short: "Create backup container",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mngr.CreateBackuper(cmd.Context(), args[0])
+		},
+	}
+
+	createAllCmd := &cobra.Command{
+		Use:   "create-all",
+		Short: "Create all backup containers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mngr.CreateAll(cmd.Context())
+		},
+	}
+
+	removeCmd := &cobra.Command{
+		Use:   "remove name",
+		Short: "Remove backup container",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mngr.RemoveBackuper(cmd.Context(), args[0])
+		},
+	}
+
+	removeAllCmd := &cobra.Command{
+		Use:   "remove-all",
+		Short: "Remove all backup containers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mngr.RemoveAll(cmd.Context())
+		},
+	}
+
 	pullBackupCmd := &cobra.Command{
 		Use:   "pull-backup",
 		Short: "Pull image for backup container",
@@ -201,6 +235,10 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		pullForceCmd,
 		pullAllCmd,
 		listCmd,
+		createCmd,
+		createAllCmd,
+		removeCmd,
+		removeAllCmd,
 	)
 
 	return rootCmd

@@ -536,6 +536,49 @@ func (mngr *ContainerManager) StopAll(ctx context.Context) error {
 	return nil
 }
 
+func (mngr *ContainerManager) RemoveBackuper(ctx context.Context, name string) error {
+	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
+	if err != nil {
+		return err
+	}
+
+	if cntr == nil {
+		return fmt.Errorf("backup container '%s' doesn't exist", name)
+	}
+
+	err = mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Removing '%s' backup container\n", name)
+
+	return mngr.docker.ContainerRemove(ctx, cntr.ID, container.RemoveOptions{})
+}
+
+func (mngr *ContainerManager) RemoveAll(ctx context.Context) error {
+	backupers, err := mngr.listContainersWithLabel(ctx, mngr.labels.backuperName, true)
+	if err != nil {
+		return err
+	}
+
+	for _, backuper := range backupers {
+		err = mngr.docker.ContainerStop(ctx, backuper.ID, container.StopOptions{})
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Removing '%s' backup container\n", backuper.Labels[mngr.labels.backuperName])
+
+		err = mngr.docker.ContainerRemove(ctx, backuper.ID, container.RemoveOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (mngr *ContainerManager) StartBackuper(ctx context.Context, name string) error {
 	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
 	if err != nil {
@@ -561,6 +604,56 @@ func (mngr *ContainerManager) StartAll(ctx context.Context) error {
 		log.Printf("Starting '%s' backup container\n", backuper.Labels[mngr.labels.backuperName])
 
 		err := mngr.docker.ContainerStart(ctx, backuper.ID, container.StartOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) CreateBackuper(ctx context.Context, name string) error {
+	backuper, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
+	if err != nil {
+		return err
+	}
+
+	if backuper != nil {
+		return fmt.Errorf("backup container '%s' already exists, if you want to recreate it, remove first", name)
+	}
+
+	backupCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backupName, name, true)
+	if err != nil {
+		return err
+	}
+
+	if backupCntr == nil {
+		return fmt.Errorf("no container '%s' to backup", name)
+	}
+
+	return mngr.createBackuper(ctx, name)
+}
+
+func (mngr *ContainerManager) CreateAll(ctx context.Context) error {
+	backupCntrs, err := mngr.listContainersWithLabel(ctx, mngr.labels.backupName, true)
+	if err != nil {
+		return err
+	}
+
+	for _, backupCntr := range backupCntrs {
+		name := backupCntr.Labels[mngr.labels.backupName]
+
+		backuper, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
+		if err != nil {
+			return err
+		}
+
+		if backuper != nil {
+			log.Printf("backup container '%s' already exists, skipping\n", name)
+			continue
+		}
+
+		err = mngr.createBackuper(ctx, name)
 		if err != nil {
 			return err
 		}
