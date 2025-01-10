@@ -6,6 +6,7 @@ require (
 	github.com/caarlos0/env/v11 v11.2.2
 	github.com/compose-spec/compose-go/v2 v2.4.6
 	github.com/docker/docker v27.2.1+incompatible
+	github.com/mattn/go-shellwords v1.0.12
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
