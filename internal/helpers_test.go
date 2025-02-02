@@ -374,7 +374,7 @@ func (tm *testMngr) expectRestoreCreateAndStart(t *testing.T, name string) {
 	if cntrCfg.Labels == nil {
 		cntrCfg.Labels = make(map[string]string)
 	}
-	cntrCfg.Labels[tm.mngr.labels.backuperName] = name
+	cntrCfg.Labels[tm.mngr.labels.restoreTag] = name
 	hstCfg.AutoRemove = true
 
 	hstCfg.Binds = append(hstCfg.Binds, "/data:/data")
