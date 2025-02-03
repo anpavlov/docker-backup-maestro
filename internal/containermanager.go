@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -167,6 +168,13 @@ func (mngr *ContainerManager) dropBackuper(ctx context.Context, name string) err
 func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) error {
 	log.Println("create backuper", name)
 
+	alphanumeric := regexp.MustCompile("^[a-zA-Z0-9-._]*$")
+	if !alphanumeric.MatchString(name) {
+		log.Printf("ERROR: invalid backup name: %s\n", name)
+		log.Println("ERROR: backup name must contain only letters, digits and '-' '_' '.'")
+		return nil
+	}
+
 	existingBackuper, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
 	if err != nil {
 		return err
@@ -192,7 +200,9 @@ func (mngr *ContainerManager) createBackuper(ctx context.Context, name string) e
 
 	backuperCfg.Labels[mngr.labels.backuperConsistencyHash] = hash
 
-	return mngr.startBackuper(ctx, backuperCfg)
+	cntrName := strings.ReplaceAll(mngr.conf.BackupNameFormat, "{name}", name)
+
+	return mngr.startBackuper(ctx, backuperCfg, cntrName)
 }
 
 func (mngr *ContainerManager) updateBackuper(ctx context.Context, toBackup, backuper types.Container) error {
@@ -260,16 +270,14 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 
 	if len(volumes) == 0 {
 		hostPathToBind := getContainerLabel(cntr, mngr.labels.backupPath)
-		if len(hostPathToBind) == 0 {
-			return nil, fmt.Errorf("could not find path to mount for backup")
-		}
+		if len(hostPathToBind) != 0 {
+			bind := fmt.Sprintf("%s:%s", hostPathToBind, mngr.conf.Backuper.BindToPath)
+			if !rw {
+				bind += ":ro"
+			}
 
-		bind := fmt.Sprintf("%s:%s", hostPathToBind, mngr.conf.Backuper.BindToPath)
-		if !rw {
-			bind += ":ro"
+			volumes = append(volumes, bind)
 		}
-
-		volumes = append(volumes, bind)
 	}
 
 	// check for additional volumes
@@ -301,7 +309,7 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 	return backuperBaseCfg, nil
 }
 
-func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template, tag string) error {
+func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name string, tmpl *Template, tag string, cntrNameFormat string) error {
 	backuperCntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
 	if err != nil {
 		return err
@@ -327,9 +335,11 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 
 	oneOffCfg = tmpl.Overlay(oneOffCfg)
 
-	oneOffCfg.AutoRemove = true
+	oneOffCfg.autoRemove = true
 
-	cntrId, err := mngr.createContainer(ctx, oneOffCfg, tag)
+	cntrName := strings.ReplaceAll(cntrNameFormat, "{name}", name)
+
+	cntrId, err := mngr.createContainer(ctx, oneOffCfg, tag, cntrName)
 	if err != nil {
 		return err
 	}
@@ -368,7 +378,7 @@ func (mngr *ContainerManager) Restore(ctx context.Context, name string) error {
 		return fmt.Errorf("restore template not set")
 	}
 
-	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore, mngr.labels.restoreTag)
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.Restore, mngr.labels.restoreTag, mngr.conf.RestoreNameFormat)
 }
 
 func (mngr *ContainerManager) RestoreAll(ctx context.Context) error {
@@ -385,7 +395,7 @@ func (mngr *ContainerManager) RestoreAll(ctx context.Context) error {
 		backupName := backupCntr.Labels[mngr.labels.backupName]
 		log.Printf("Restoring %s\n", backupName)
 
-		err := mngr.oneOffContainerFromTmpl(ctx, backupName, mngr.tmpls.Restore, mngr.labels.restoreTag)
+		err := mngr.oneOffContainerFromTmpl(ctx, backupName, mngr.tmpls.Restore, mngr.labels.restoreTag, mngr.conf.RestoreNameFormat)
 		if err != nil {
 			return err
 		}
@@ -399,7 +409,7 @@ func (mngr *ContainerManager) ForceBackup(ctx context.Context, name string) erro
 		return fmt.Errorf("force backup template not set")
 	}
 
-	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag)
+	return mngr.oneOffContainerFromTmpl(ctx, name, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag, mngr.conf.ForceNameFormat)
 }
 
 func (mngr *ContainerManager) ForceBackupAll(ctx context.Context, includeStopped bool) error {
@@ -416,7 +426,7 @@ func (mngr *ContainerManager) ForceBackupAll(ctx context.Context, includeStopped
 		backupName := backupCntr.Labels[mngr.labels.backupName]
 		log.Printf("Running force backup %s\n", backupName)
 
-		err := mngr.oneOffContainerFromTmpl(ctx, backupName, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag)
+		err := mngr.oneOffContainerFromTmpl(ctx, backupName, mngr.tmpls.ForceBackup, mngr.labels.forceBackupTag, mngr.conf.ForceNameFormat)
 		if err != nil {
 			return err
 		}

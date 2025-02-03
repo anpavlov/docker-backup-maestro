@@ -76,7 +76,7 @@ func TestTemplateOverlay(t *testing.T) {
 		EnvFile:     []string{"env_file"},
 		Restart:     "unless-stopped",
 		Command:     []string{"cmd"},
-		Volumes:     []string{"/data:/inside"},
+		Volumes:     []string{"/data1:/inside1"},
 		Networks:    []string{"net"},
 		Labels:      map[string]string{"lbl": "txt", "lbl2": ""},
 		Environment: map[string]string{"ENV1": "VAL1"},
@@ -101,7 +101,7 @@ func TestTemplateOverlay(t *testing.T) {
 	require.Equal(t, tmpl_res.EnvFile, StringOneOrArray([]string{"env_file", "env_file2"}))
 	require.Equal(t, tmpl_res.Restart, "always")
 	require.Equal(t, tmpl_res.Command, ShellCommand([]string{"cmd2"}))
-	require.Equal(t, tmpl_res.Volumes, []string{"/data:/inside", "/data2:/inside2"})
+	require.Equal(t, tmpl_res.Volumes, []string{"/data1:/inside1", "/data2:/inside2"})
 	require.Equal(t, tmpl_res.Networks, []string{"net", "net2"})
 	require.Equal(t, tmpl_res.Labels, StringMapOrArray(map[string]string{"lbl": "boo", "lbl2": "", "lbl3": "hello"}))
 	require.Equal(t, tmpl_res.Environment, StringMapOrArray(map[string]string{"ENV1": "VAL!", "ENV2": "VAL2"}))

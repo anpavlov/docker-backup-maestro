@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"maps"
 	"slices"
@@ -312,7 +313,7 @@ func (tm *testMngr) expectBackuperCreateAndStart(t *testing.T, name string, labe
 	cntrCfg.Labels[tm.mngr.labels.backuperName] = name
 	cntrCfg.Labels[tm.mngr.labels.backuperConsistencyHash] = hash
 
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: "hello"}, nil).Once()
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, fmt.Sprintf("maestro.backup_%s", name)).Return(container.CreateResponse{ID: "hello"}, nil).Once()
 	tm.docker.EXPECT().ContainerStart(mock.Anything, "hello", mock.Anything).Return(nil).Once()
 }
 
@@ -379,6 +380,6 @@ func (tm *testMngr) expectRestoreCreateAndStart(t *testing.T, name string) {
 
 	hstCfg.Binds = append(hstCfg.Binds, "/data:/data")
 
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: "restoreid" + name}, nil).Once()
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, fmt.Sprintf("maestro.restore_%s", name)).Return(container.CreateResponse{ID: "restoreid" + name}, nil).Once()
 	tm.docker.EXPECT().ContainerStart(mock.Anything, "restoreid"+name, mock.Anything).Return(nil).Once()
 }

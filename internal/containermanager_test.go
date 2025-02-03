@@ -342,11 +342,13 @@ func TestNewBackuperLabelsMultipath(t *testing.T) {
 		tm.mngr.labels.backupPath + ".dir1": "/host/path1",
 		tm.mngr.labels.backupPath + ".dir2": "/host/path2",
 		tm.mngr.labels.backupPath:           "/host/path3", // should be ignored
+		tm.mngr.labels.backupVolume:         "/host/path4:/inside",
+		tm.mngr.labels.backupVolume + ".1":  "/host/path5:/inside2",
 	}
 
 	overlay := &Template{
 		Labels:  map[string]string{tm.mngr.labels.backuperName: "example"},
-		Volumes: []string{"/host/path1:/data/dir1:ro", "/host/path2:/data/dir2:ro"},
+		Volumes: []string{"/host/path1:/data/dir1:ro", "/host/path2:/data/dir2:ro", "/host/path4:/inside", "/host/path5:/inside2"},
 	}
 
 	tm.expectBackuperCreateAndStart(t, "example", customLabels, overlay)

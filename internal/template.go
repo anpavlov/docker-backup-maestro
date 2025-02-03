@@ -113,7 +113,8 @@ type Template struct {
 	Volumes     []string
 	Labels      StringMapOrArray
 	Networks    []string
-	AutoRemove  bool
+
+	autoRemove bool
 }
 
 func (tmpl *Template) Hash() string {
@@ -174,12 +175,15 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 	}
 
 	newTmpl.EnvFile = append(newTmpl.EnvFile, other.EnvFile...)
+	slices.Sort(newTmpl.EnvFile)
 
 	for _, v := range other.Volumes {
 		if !slices.Contains(newTmpl.Volumes, v) {
 			newTmpl.Volumes = append(newTmpl.Volumes, v)
 		}
 	}
+
+	slices.Sort(newTmpl.Volumes)
 
 	if newTmpl.Labels == nil {
 		newTmpl.Labels = other.Labels
@@ -192,6 +196,8 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 			newTmpl.Networks = append(newTmpl.Networks, k)
 		}
 	}
+
+	slices.Sort(newTmpl.Networks)
 
 	return &newTmpl
 }
@@ -251,7 +257,7 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 	hostCfg := &container.HostConfig{
 		Binds:         tmpl.Volumes,
 		RestartPolicy: rst,
-		AutoRemove:    tmpl.AutoRemove,
+		AutoRemove:    tmpl.autoRemove,
 	}
 
 	var netCfg *network.NetworkingConfig
@@ -296,6 +302,10 @@ func ReadTemplateFromFile(path string, required bool) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("backuper template '%s' parsing failed: %w", path, err)
 	}
+
+	slices.Sort(tmpl.Volumes)
+	slices.Sort(tmpl.EnvFile)
+	slices.Sort(tmpl.Networks)
 
 	return tmpl, nil
 }

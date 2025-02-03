@@ -127,7 +127,7 @@ func (mngr *ContainerManager) getContainerByLabelValue(ctx context.Context, labe
 	return nil, nil
 }
 
-func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template, tag string) (string, error) {
+func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template, tag string, cntrName string) (string, error) {
 	buildInfo, cntrCfg, hstCfg, netCfg, err := cfg.CreateConfig(tag)
 	if err != nil {
 		return "", err
@@ -145,7 +145,7 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 		}
 	}
 
-	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, "")
+	resp, err := mngr.docker.ContainerCreate(ctx, cntrCfg, hstCfg, netCfg, nil, cntrName)
 	if err != nil {
 		return "", err
 	}
@@ -304,8 +304,8 @@ imgLoop:
 	return err
 }
 
-func (mngr *ContainerManager) startBackuper(ctx context.Context, cfg *Template) error {
-	cntrId, err := mngr.createContainer(ctx, cfg, mngr.labels.backuperTag)
+func (mngr *ContainerManager) startBackuper(ctx context.Context, cfg *Template, cntrName string) error {
+	cntrId, err := mngr.createContainer(ctx, cfg, mngr.labels.backuperTag, cntrName)
 	if err != nil {
 		return err
 	}
