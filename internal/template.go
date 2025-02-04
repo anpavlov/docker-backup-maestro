@@ -113,6 +113,8 @@ type Template struct {
 	Volumes     []string
 	Labels      StringMapOrArray
 	Networks    []string
+	Devices     []string
+	Privileged  bool
 
 	autoRemove bool
 }
@@ -199,6 +201,18 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 
 	slices.Sort(newTmpl.Networks)
 
+	for _, k := range other.Devices {
+		if !slices.Contains(newTmpl.Devices, k) {
+			newTmpl.Networks = append(newTmpl.Devices, k)
+		}
+	}
+
+	slices.Sort(newTmpl.Devices)
+
+	if other.Privileged {
+		newTmpl.Privileged = true
+	}
+
 	return &newTmpl
 }
 
@@ -220,7 +234,7 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 	if tmpl.Environment != nil {
 		envMap, err := dotenv.ParseWithLookup(strings.NewReader(strings.Join(composegoutils.GetAsStringList(tmpl.Environment), "\n")), os.LookupEnv)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("")
+			return nil, nil, nil, nil, fmt.Errorf("failed to parse env with lookup: %w", err)
 		}
 
 		if environment == nil {
@@ -258,6 +272,34 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 		Binds:         tmpl.Volumes,
 		RestartPolicy: rst,
 		AutoRemove:    tmpl.autoRemove,
+	}
+
+	if len(tmpl.Devices) > 0 {
+		devices := []container.DeviceMapping{}
+
+		for _, dev := range tmpl.Devices {
+			elems := strings.Split(dev, ":")
+			if len(elems) < 2 {
+				return nil, nil, nil, nil, fmt.Errorf("device must have one colon (:) minimum: %s", dev)
+			}
+
+			device := container.DeviceMapping{
+				PathOnHost:      elems[0],
+				PathInContainer: elems[1],
+			}
+
+			if len(elems) > 2 {
+				device.CgroupPermissions = elems[2]
+			}
+
+			devices = append(devices, device)
+		}
+
+		hostCfg.Resources.Devices = devices
+	}
+
+	if tmpl.Privileged {
+		hostCfg.Privileged = true
 	}
 
 	var netCfg *network.NetworkingConfig
@@ -306,6 +348,7 @@ func ReadTemplateFromFile(path string, required bool) (*Template, error) {
 	slices.Sort(tmpl.Volumes)
 	slices.Sort(tmpl.EnvFile)
 	slices.Sort(tmpl.Networks)
+	slices.Sort(tmpl.Devices)
 
 	return tmpl, nil
 }

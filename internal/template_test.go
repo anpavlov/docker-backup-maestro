@@ -19,6 +19,8 @@ func TestTemplateCreate(t *testing.T) {
 		Networks:    []string{"example_net"},
 		Labels:      map[string]string{"lbl": "txt", "lbl2": ""},
 		Environment: map[string]string{"ENV1": "VAL1"},
+		Devices:     []string{"/dev/sda:/dev/sdb"},
+		Privileged:  true,
 	}
 
 	buildInfo, cntrCfg, hostCfg, netCfg, err := tmpl.CreateConfig("not used")
@@ -39,6 +41,13 @@ func TestTemplateCreate(t *testing.T) {
 		RestartPolicy: container.RestartPolicy{
 			Name: container.RestartPolicyUnlessStopped,
 		},
+		Resources: container.Resources{Devices: []container.DeviceMapping{
+			{
+				PathOnHost:      "/dev/sda",
+				PathInContainer: "/dev/sdb",
+			},
+		}},
+		Privileged: true,
 	})
 
 	require.Equal(t, *netCfg, network.NetworkingConfig{
