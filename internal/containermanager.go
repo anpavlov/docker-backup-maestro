@@ -259,7 +259,7 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 
 			bind := fmt.Sprintf("%s:%s", hostPath, path.Join(mngr.conf.Backuper.BindToPath, dirName))
 
-			if !rw {
+			if !mngr.conf.AlwaysRw && !rw {
 				bind += ":ro"
 			}
 

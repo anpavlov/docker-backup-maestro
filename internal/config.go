@@ -21,4 +21,6 @@ type Config struct {
 	BackupTag  string `env:"BACKUP_TAG,expand" envDefault:"${LABEL_PREFIX}.backup"`
 	RestoreTag string `env:"RESTORE_TAG,expand" envDefault:"${LABEL_PREFIX}.restore"`
 	ForceTag   string `env:"FORCEBACKUP_TAG,expand" envDefault:"${LABEL_PREFIX}.forcebackup"`
+
+	AlwaysRw bool `env:"ALWAYS_RW"`
 }
