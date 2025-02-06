@@ -305,7 +305,7 @@ imgLoop:
 }
 
 func (mngr *ContainerManager) startBackuper(ctx context.Context, cfg *Template, cntrName string) error {
-	cntrId, err := mngr.createContainer(ctx, cfg, mngr.labels.backuperTag, cntrName)
+	cntrId, err := mngr.createContainer(ctx, cfg, mngr.conf.BackupTag, cntrName)
 	if err != nil {
 		return err
 	}

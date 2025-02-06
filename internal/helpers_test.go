@@ -303,7 +303,7 @@ func (tm *testMngr) expectBackuperCreateAndStart(t *testing.T, name string, labe
 	}
 	hash := tmpl.Hash()
 
-	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tm.mngr.labels.backuperTag)
+	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tm.mngr.conf.BackupTag)
 	require.NoError(t, err)
 
 	if cntrCfg.Labels == nil {
@@ -313,7 +313,7 @@ func (tm *testMngr) expectBackuperCreateAndStart(t *testing.T, name string, labe
 	cntrCfg.Labels[tm.mngr.labels.backuperName] = name
 	cntrCfg.Labels[tm.mngr.labels.backuperConsistencyHash] = hash
 
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, fmt.Sprintf("maestro.backup_%s", name)).Return(container.CreateResponse{ID: "hello"}, nil).Once()
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, fmt.Sprintf("docker-backup-maestro.backup_%s", name)).Return(container.CreateResponse{ID: "hello"}, nil).Once()
 	tm.docker.EXPECT().ContainerStart(mock.Anything, "hello", mock.Anything).Return(nil).Once()
 }
 
@@ -369,17 +369,17 @@ func (tm *testMngr) expectBackuperStart(name string) {
 
 func (tm *testMngr) expectRestoreCreateAndStart(t *testing.T, name string) {
 	tmpl := tm.mngr.tmpls.Restore
-	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tm.mngr.labels.restoreTag)
+	_, cntrCfg, hstCfg, netCfg, err := tmpl.CreateConfig(tm.mngr.conf.RestoreTag)
 	require.NoError(t, err)
 
 	if cntrCfg.Labels == nil {
 		cntrCfg.Labels = make(map[string]string)
 	}
-	cntrCfg.Labels[tm.mngr.labels.restoreTag] = name
+	cntrCfg.Labels[tm.mngr.labels.restore] = name
 	hstCfg.AutoRemove = true
 
 	hstCfg.Binds = append(hstCfg.Binds, "/data:/data")
 
-	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, fmt.Sprintf("maestro.restore_%s", name)).Return(container.CreateResponse{ID: "restoreid" + name}, nil).Once()
+	tm.docker.EXPECT().ContainerCreate(mock.Anything, cntrCfg, hstCfg, netCfg, mock.Anything, fmt.Sprintf("docker-backup-maestro.restore_%s", name)).Return(container.CreateResponse{ID: "restoreid" + name}, nil).Once()
 	tm.docker.EXPECT().ContainerStart(mock.Anything, "restoreid"+name, mock.Anything).Return(nil).Once()
 }

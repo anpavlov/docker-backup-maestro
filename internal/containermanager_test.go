@@ -135,7 +135,7 @@ func TestBuildBackuper(t *testing.T) {
 	tm.expectListenEvents()
 	tm.expectImageList(nil)
 
-	tm.expectBuild(tm.mngr.labels.backuperTag + ":latest")
+	tm.expectBuild(tm.mngr.conf.BackupTag + ":latest")
 
 	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
@@ -156,7 +156,7 @@ func TestNoRebuildBackuper(t *testing.T) {
 	defer cancel()
 
 	tm.expectListenEvents()
-	tm.expectImageList([]string{tm.mngr.labels.backuperTag + ":latest"})
+	tm.expectImageList([]string{tm.mngr.conf.BackupTag + ":latest"})
 
 	tm.expectBackuperCreateAndStart(t, "example", nil, nil)
 
@@ -308,7 +308,7 @@ func TestNewBackuperUseLabels(t *testing.T) {
 		tm.mngr.labels.backupName:                "example",
 		tm.mngr.labels.backupPath:                "/host/path",
 		tm.mngr.labels.backupEnvPrefix + "MYENV": "env_val",
-		tm.mngr.labels.backupNetwork:             "example_net",
+		tm.mngr.labels.backupNetworks:            "example_net,net_two",
 		tm.mngr.labels.backupVolume:              "/host/path2:/inside2",
 	}
 
@@ -316,7 +316,7 @@ func TestNewBackuperUseLabels(t *testing.T) {
 		Labels:      map[string]string{tm.mngr.labels.backuperName: "example"},
 		Volumes:     []string{"/host/path:/data:ro", "/host/path2:/inside2"},
 		Environment: map[string]string{"MYENV": "env_val"},
-		Networks:    []string{"example_net"},
+		Networks:    []string{"example_net", "net_two"},
 	}
 
 	tm.expectBackuperCreateAndStart(t, "example", customLabels, overlay)
