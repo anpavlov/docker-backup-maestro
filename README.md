@@ -105,6 +105,8 @@ The same way works force-backup container, but it is intended for instant backup
 
 `ALWAYS_RW` - if `TRUE`, then data mounts in backup containers will be mounted without ro flag always. Default: `FALSE`
 
+`BUILDER_V1` - if `TRUE`, then old docker builder v1 used to build images instead of BuildKit. Sometimes helps to overcome issues and bugs during build. Default: `FALSE`
+
 ### Labels for app containers
 
 Labels on app containers are used to setup apps companion container. Setting this labels allows to have different settings on each companion container. Here are label names provided based on default label prefix `docker-backup-maestro` changed with env `LABEL_PREFIX`

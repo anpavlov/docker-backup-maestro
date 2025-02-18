@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,9 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+
+	controlapi "github.com/moby/buildkit/api/services/control"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -30,6 +34,7 @@ type buildRespLine struct {
 	Message string
 	Error   string
 	Stream  string
+	Aux     interface{}
 }
 
 type pullRespLine struct {
@@ -247,7 +252,14 @@ imgLoop:
 		return nil
 	}
 
-	opts := types.ImageBuildOptions{}
+	opts := types.ImageBuildOptions{
+		Version: types.BuilderBuildKit,
+		NoCache: true,
+	}
+
+	if mngr.conf.BuilderV1 {
+		opts.Version = types.BuilderV1
+	}
 
 	if len(buildInfo.Data.Dockerfile) > 0 {
 		opts.Dockerfile = buildInfo.Data.Dockerfile
@@ -289,7 +301,37 @@ imgLoop:
 
 		if len(line.Error) > 0 {
 			fmt.Printf("build error: %s\n", line.Error)
+
 			return errors.New(line.Error)
+
+		}
+
+		if line.Aux != nil {
+			if s, ok := line.Aux.(string); ok {
+				msgData, err := base64.StdEncoding.DecodeString(s)
+				if err != nil {
+					return fmt.Errorf("failed to decode base64 aux (%v): %w", line, err)
+				}
+
+				var msg controlapi.StatusResponse
+				err = proto.Unmarshal(msgData, &msg)
+				if err != nil {
+					return fmt.Errorf("failed to decode protobuf aux  (%v): %w", line, err)
+				}
+
+				for _, v := range msg.Vertexes {
+					fmt.Printf("buildkit: %v\n", v.Name)
+				}
+				for _, v := range msg.Logs {
+					fmt.Printf("buildkit: %v", string(v.Msg))
+				}
+				for _, v := range msg.Statuses {
+					fmt.Printf("buildkit: %v\n", v.ID)
+				}
+				for _, v := range msg.Warnings {
+					fmt.Printf("buildkit warn: %v\n", string(v.Short))
+				}
+			}
 		}
 
 		if len(line.Message) > 0 {
@@ -297,11 +339,11 @@ imgLoop:
 		}
 
 		if len(line.Stream) > 0 {
-			fmt.Printf("build: %s", line.Stream)
+			fmt.Printf("build: %s\n", line.Stream)
 		}
 	}
 
-	return err
+	return nil
 }
 
 func (mngr *ContainerManager) startBackuper(ctx context.Context, cfg *Template, cntrName string) error {

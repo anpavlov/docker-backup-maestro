@@ -23,4 +23,6 @@ type Config struct {
 	ForceTag   string `env:"FORCEBACKUP_TAG,expand" envDefault:"${LABEL_PREFIX}.forcebackup"`
 
 	AlwaysRw bool `env:"ALWAYS_RW"`
+
+	BuilderV1 bool `env:"BUILDER_V1"`
 }
