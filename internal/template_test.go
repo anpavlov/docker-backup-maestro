@@ -117,12 +117,9 @@ func TestTemplateOverlay(t *testing.T) {
 }
 
 func TestTemplateOverlayBuild(t *testing.T) {
-	buildInfo := BuildInfo{Data: struct {
-		Context    string
-		Dockerfile string
-	}{
+	buildInfo := BuildInfo{
 		Context: ".",
-	}}
+	}
 
 	tmpl1 := Template{
 		Image: "img",
@@ -200,10 +197,9 @@ networks:
 	require.NoError(t, err)
 
 	require.Equal(t, tmpl.Image, "alpine")
-	require.Equal(t, tmpl.Build, BuildInfo{Data: struct {
-		Context    string
-		Dockerfile string
-	}{Context: "."}})
+	require.Equal(t, tmpl.Build, BuildInfo{
+		Context: ".",
+	})
 	require.Equal(t, tmpl.Entrypoint, ShellCommand([]string{"hello"}))
 	require.Equal(t, tmpl.Command, ShellCommand([]string{"cmd", "subcmd", "exec", "-p 800 varval"}))
 	require.Equal(t, tmpl.Restart, "unless-stopped")
@@ -233,10 +229,10 @@ environment:
 	require.NoError(t, err)
 
 	require.Equal(t, tmpl.Image, "alpine")
-	require.Equal(t, tmpl.Build, BuildInfo{Data: struct {
-		Context    string
-		Dockerfile string
-	}{Context: "/ctx", Dockerfile: "cfg/Dockerfile"}})
+	require.Equal(t, tmpl.Build, BuildInfo{
+		Context:    "/ctx",
+		Dockerfile: "cfg/Dockerfile",
+	})
 	require.Equal(t, tmpl.EnvFile, StringOneOrArray([]string{".env2"}))
 	require.Equal(t, tmpl.Environment, StringMapOrArray(map[string]string{"ENV": "var2val", "ENV1": "VAL"}))
 }

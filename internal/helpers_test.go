@@ -339,7 +339,7 @@ func (tm *testMngr) expectBackuperRemove(name string) {
 
 func (tm *testMngr) expectBuild(tag string) {
 	resp := strings.NewReader("")
-	tm.docker.EXPECT().ImageBuild(mock.Anything, mock.Anything, types.ImageBuildOptions{Tags: []string{tag}}).Return(types.ImageBuildResponse{Body: io.NopCloser(resp)}, nil).Once()
+	tm.docker.EXPECT().ImageBuild(mock.Anything, mock.Anything, types.ImageBuildOptions{Version: types.BuilderBuildKit, Tags: []string{tag}}).Return(types.ImageBuildResponse{Body: io.NopCloser(resp)}, nil).Once()
 }
 
 func (tm *testMngr) expectPull(tag string) {

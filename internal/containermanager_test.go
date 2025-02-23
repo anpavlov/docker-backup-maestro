@@ -124,10 +124,9 @@ func TestDropBackuperOnline(t *testing.T) {
 }
 
 func TestBuildBackuper(t *testing.T) {
-	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{Data: struct {
-		Context    string
-		Dockerfile string
-	}{Context: "."}}}})
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{
+		Context: ".",
+	}}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -147,10 +146,9 @@ func TestBuildBackuper(t *testing.T) {
 }
 
 func TestNoRebuildBackuper(t *testing.T) {
-	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{Data: struct {
-		Context    string
-		Dockerfile string
-	}{Context: "."}}}})
+	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{
+		Context: ".",
+	}}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

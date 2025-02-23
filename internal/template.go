@@ -82,22 +82,28 @@ func (val *StringMapOrArray) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return nil
 }
 
-type BuildInfo struct {
-	Data struct {
-		Context    string
-		Dockerfile string
-	}
+type DependentBuild struct {
+	Context    string
+	Dockerfile string
 }
 
+type buildInfo struct {
+	Context         string
+	Dockerfile      string
+	DependentBuilds []DependentBuild
+}
+
+type BuildInfo buildInfo
+
 func (val *BuildInfo) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	err := unmarshal(&val.Data)
+	err := unmarshal((*buildInfo)(val))
 	if err != nil {
 		var s string
 		err := unmarshal(&s)
 		if err != nil {
 			return err
 		}
-		val.Data.Context = s
+		val.Context = s
 	}
 	return nil
 }
@@ -142,7 +148,7 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 		log.Fatal("deepcopy failed:", err)
 	}
 
-	if len(other.Build.Data.Context) != 0 || len(other.Build.Data.Dockerfile) != 0 {
+	if len(other.Build.Context) != 0 || len(other.Build.Dockerfile) != 0 {
 		newTmpl.Build = other.Build
 
 		if len(other.Image) == 0 {
@@ -153,7 +159,7 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 	if len(other.Image) != 0 {
 		newTmpl.Image = other.Image
 
-		if len(other.Build.Data.Context) == 0 && len(other.Build.Data.Dockerfile) == 0 {
+		if len(other.Build.Context) == 0 && len(other.Build.Dockerfile) == 0 {
 			newTmpl.Build = BuildInfo{}
 		}
 	}
@@ -315,7 +321,7 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 	}
 
 	var buildInfo *BuildInfo
-	if len(tmpl.Build.Data.Context) > 0 || len(tmpl.Build.Data.Dockerfile) > 0 {
+	if len(tmpl.Build.Context) > 0 || len(tmpl.Build.Dockerfile) > 0 {
 		buildInfo = &tmpl.Build
 
 		if len(cntrCfg.Image) == 0 {

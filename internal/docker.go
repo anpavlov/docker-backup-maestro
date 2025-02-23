@@ -254,23 +254,22 @@ imgLoop:
 
 	opts := types.ImageBuildOptions{
 		Version: types.BuilderBuildKit,
-		NoCache: true,
 	}
 
 	if mngr.conf.BuilderV1 {
 		opts.Version = types.BuilderV1
 	}
 
-	if len(buildInfo.Data.Dockerfile) > 0 {
-		opts.Dockerfile = buildInfo.Data.Dockerfile
+	if len(buildInfo.Dockerfile) > 0 {
+		opts.Dockerfile = buildInfo.Dockerfile
 	}
 
 	opts.Tags = []string{tag}
 
 	buildCtx := "."
 
-	if len(buildInfo.Data.Context) > 0 {
-		buildCtx = buildInfo.Data.Context
+	if len(buildInfo.Context) > 0 {
+		buildCtx = buildInfo.Context
 	}
 
 	var archive bytes.Buffer
