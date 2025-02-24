@@ -216,6 +216,9 @@ networks:
 build:
   context: /ctx
   dockerfile: cfg/Dockerfile
+  dependentbuilds:
+    - context: /depen
+      tag: "depen:latest"
 env_file:
   - .env2
 environment:
@@ -230,8 +233,9 @@ environment:
 
 	require.Equal(t, tmpl.Image, "alpine")
 	require.Equal(t, tmpl.Build, BuildInfo{
-		Context:    "/ctx",
-		Dockerfile: "cfg/Dockerfile",
+		Context:         "/ctx",
+		Dockerfile:      "cfg/Dockerfile",
+		DependentBuilds: []DependentBuild{{Context: "/depen", Tag: "depen:latest"}},
 	})
 	require.Equal(t, tmpl.EnvFile, StringOneOrArray([]string{".env2"}))
 	require.Equal(t, tmpl.Environment, StringMapOrArray(map[string]string{"ENV": "var2val", "ENV1": "VAL"}))

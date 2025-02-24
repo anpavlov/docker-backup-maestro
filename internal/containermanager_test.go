@@ -125,7 +125,8 @@ func TestDropBackuperOnline(t *testing.T) {
 
 func TestBuildBackuper(t *testing.T) {
 	tm := newTestMngr(t, []string{"example"}, nil, UserTemplates{Backuper: &Template{Build: BuildInfo{
-		Context: ".",
+		Context:         ".",
+		DependentBuilds: []DependentBuild{{Tag: "depen", Context: "."}},
 	}}})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -134,6 +135,7 @@ func TestBuildBackuper(t *testing.T) {
 	tm.expectListenEvents()
 	tm.expectImageList(nil)
 
+	tm.expectBuild("depen:latest")
 	tm.expectBuild(tm.mngr.conf.BackupTag + ":latest")
 
 	tm.expectBackuperCreateAndStart(t, "example", nil, nil)

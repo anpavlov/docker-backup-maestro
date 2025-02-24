@@ -83,6 +83,7 @@ func (val *StringMapOrArray) UnmarshalYAML(unmarshal func(interface{}) error) er
 }
 
 type DependentBuild struct {
+	Tag        string
 	Context    string
 	Dockerfile string
 }

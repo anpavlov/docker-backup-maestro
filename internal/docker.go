@@ -252,6 +252,18 @@ imgLoop:
 		return nil
 	}
 
+	for _, dependencyImage := range buildInfo.DependentBuilds {
+		depBuildInfo := &BuildInfo{
+			Context:    dependencyImage.Context,
+			Dockerfile: dependencyImage.Dockerfile,
+		}
+
+		err := mngr.buildImage(ctx, depBuildInfo, dependencyImage.Tag)
+		if err != nil {
+			return fmt.Errorf("dependency (%s) build failed: %w", dependencyImage.Tag, err)
+		}
+	}
+
 	opts := types.ImageBuildOptions{
 		Version: types.BuilderBuildKit,
 	}
