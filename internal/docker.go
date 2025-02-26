@@ -200,6 +200,10 @@ func (mngr *ContainerManager) pullImage(ctx context.Context, tag string, force b
 		defer resp.Close()
 	}
 
+	if err != nil || resp == nil {
+		return err
+	}
+
 	dec := json.NewDecoder(resp)
 
 	for {
@@ -223,7 +227,9 @@ func (mngr *ContainerManager) pullImage(ctx context.Context, tag string, force b
 
 	}
 
-	return err
+	log.Println("successfully pulled", tag)
+
+	return nil
 }
 
 func (mngr *ContainerManager) buildImage(ctx context.Context, buildInfo *BuildInfo, tag string, force bool) error {
@@ -264,6 +270,8 @@ imgLoop:
 			return fmt.Errorf("dependency (%s) build failed: %w", dependencyImage.Tag, err)
 		}
 	}
+
+	log.Println("start building", tag)
 
 	opts := types.ImageBuildOptions{
 		Version: types.BuilderBuildKit,
@@ -308,7 +316,7 @@ imgLoop:
 		defer resp.Body.Close()
 	}
 
-	if resp.Body == nil {
+	if err != nil || resp.Body == nil {
 		return err
 	}
 
@@ -365,6 +373,8 @@ imgLoop:
 			fmt.Printf("build: %s\n", line.Stream)
 		}
 	}
+
+	log.Println("successfully built", tag)
 
 	return nil
 }
