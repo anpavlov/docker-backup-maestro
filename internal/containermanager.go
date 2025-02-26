@@ -449,7 +449,7 @@ func (mngr *ContainerManager) BuildAll(ctx context.Context) error {
 		if bInfo != nil {
 			log.Printf("Building %s\n", cntrCfg.Image)
 
-			err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
+			err = mngr.buildImage(ctx, bInfo, cntrCfg.Image, true)
 			if err != nil {
 				return err
 			}
@@ -468,7 +468,7 @@ func (mngr *ContainerManager) BuildBackuper(ctx context.Context) error {
 	if bInfo != nil {
 		log.Printf("Building %s\n", cntrCfg.Image)
 
-		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
+		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image, true)
 		if err != nil {
 			return err
 		}
@@ -486,7 +486,7 @@ func (mngr *ContainerManager) BuildRestore(ctx context.Context) error {
 	if bInfo != nil {
 		log.Printf("Building %s\n", cntrCfg.Image)
 
-		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
+		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image, true)
 		if err != nil {
 			return err
 		}
@@ -504,7 +504,7 @@ func (mngr *ContainerManager) BuildForce(ctx context.Context) error {
 	if bInfo != nil {
 		log.Printf("Building %s\n", cntrCfg.Image)
 
-		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image)
+		err = mngr.buildImage(ctx, bInfo, cntrCfg.Image, true)
 		if err != nil {
 			return err
 		}

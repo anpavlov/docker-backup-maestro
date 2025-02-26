@@ -139,7 +139,7 @@ func (mngr *ContainerManager) createContainer(ctx context.Context, cfg *Template
 	}
 
 	if buildInfo != nil {
-		err = mngr.buildImage(ctx, buildInfo, cntrCfg.Image)
+		err = mngr.buildImage(ctx, buildInfo, cntrCfg.Image, false)
 		if err != nil {
 			return "", err
 		}
@@ -226,7 +226,7 @@ func (mngr *ContainerManager) pullImage(ctx context.Context, tag string, force b
 	return err
 }
 
-func (mngr *ContainerManager) buildImage(ctx context.Context, buildInfo *BuildInfo, tag string) error {
+func (mngr *ContainerManager) buildImage(ctx context.Context, buildInfo *BuildInfo, tag string, force bool) error {
 	needBuild := true
 
 	if !strings.Contains(tag, ":") {
@@ -248,7 +248,7 @@ imgLoop:
 		}
 	}
 
-	if !needBuild {
+	if !needBuild && !force {
 		return nil
 	}
 
@@ -259,7 +259,7 @@ imgLoop:
 			Args:       dependencyImage.Args,
 		}
 
-		err := mngr.buildImage(ctx, depBuildInfo, dependencyImage.Tag)
+		err := mngr.buildImage(ctx, depBuildInfo, dependencyImage.Tag, force)
 		if err != nil {
 			return fmt.Errorf("dependency (%s) build failed: %w", dependencyImage.Tag, err)
 		}
