@@ -256,6 +256,7 @@ imgLoop:
 		depBuildInfo := &BuildInfo{
 			Context:    dependencyImage.Context,
 			Dockerfile: dependencyImage.Dockerfile,
+			Args:       dependencyImage.Args,
 		}
 
 		err := mngr.buildImage(ctx, depBuildInfo, dependencyImage.Tag)
@@ -266,6 +267,17 @@ imgLoop:
 
 	opts := types.ImageBuildOptions{
 		Version: types.BuilderBuildKit,
+	}
+
+	if len(buildInfo.Args) > 0 {
+		buildArgsPtr := make(map[string]*string)
+
+		for k, v := range buildInfo.Args {
+			v := v
+			buildArgsPtr[k] = &v
+		}
+
+		opts.BuildArgs = buildArgsPtr
 	}
 
 	if mngr.conf.BuilderV1 {

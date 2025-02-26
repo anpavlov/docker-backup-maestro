@@ -86,11 +86,13 @@ type DependentBuild struct {
 	Tag        string
 	Context    string
 	Dockerfile string
+	Args       StringMapOrArray
 }
 
 type buildInfo struct {
 	Context         string
 	Dockerfile      string
+	Args            StringMapOrArray
 	DependentBuilds []DependentBuild
 }
 
