@@ -106,7 +106,7 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 		Short: "Stop backup/restore container",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return mngr.StopBackuper(cmd.Context(), args[0])
+			return mngr.Stop(cmd.Context(), args[0])
 		},
 	}
 
@@ -154,7 +154,7 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 
 	removeCmd := &cobra.Command{
 		Use:   "remove name",
-		Short: "Remove backup container",
+		Short: "Remove backup and restore container",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return mngr.RemoveBackuper(cmd.Context(), args[0])
@@ -163,7 +163,7 @@ func NewRootCmd(mngr *ContainerManager) *cobra.Command {
 
 	removeAllCmd := &cobra.Command{
 		Use:   "remove-all",
-		Short: "Remove all backup containers",
+		Short: "Remove all backup and restore containers",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return mngr.RemoveAll(cmd.Context())
 		},

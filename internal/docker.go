@@ -424,7 +424,7 @@ func getContainerLabel(cntr *types.Container, label string) string {
 }
 
 func containerIsAlive(cntr *types.Container) bool {
-	return cntr != nil && (cntr.Status == ContainerStatusRunning || cntr.Status == ContainerStatusRestarting)
+	return cntr != nil && (cntr.State == ContainerStatusRunning || cntr.State == ContainerStatusRestarting)
 }
 
 func tarGz(src string, writer io.Writer) error {

@@ -341,7 +341,7 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 
 	cntrId, err := mngr.createContainer(ctx, oneOffCfg, tag, cntrName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create container: %w", err)
 	}
 
 	errChan := make(chan error)
@@ -513,33 +513,46 @@ func (mngr *ContainerManager) BuildForce(ctx context.Context) error {
 	return nil
 }
 
-func (mngr *ContainerManager) StopBackuper(ctx context.Context, name string) error {
-	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, false)
-	if err != nil {
-		return err
+func (mngr *ContainerManager) Stop(ctx context.Context, name string) error {
+	for _, i := range []struct {
+		tag string
+		typ string
+	}{{mngr.labels.backuperName, "backup"}, {mngr.conf.RestoreTag, "restore"}, {mngr.conf.ForceTag, "force-backup"}} {
+		cntr, err := mngr.getContainerByLabelValue(ctx, i.tag, name, false)
+		if err != nil {
+			return err
+		}
+
+		if cntr != nil {
+			log.Printf("Stopping '%s' %s container\n", name, i.typ)
+
+			err := mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+			if err != nil {
+				return err
+			}
+		}
 	}
 
-	if cntr == nil {
-		return fmt.Errorf("backup container '%s' is stopped or doesn't exist", name)
-	}
-
-	log.Printf("Stopping '%s' backup container\n", name)
-
-	return mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+	return nil
 }
 
 func (mngr *ContainerManager) StopAll(ctx context.Context) error {
-	backupers, err := mngr.listContainersWithLabel(ctx, mngr.labels.backuperName, false)
-	if err != nil {
-		return err
-	}
-
-	for _, backuper := range backupers {
-		log.Printf("Stopping '%s' backup container\n", backuper.Labels[mngr.labels.backuperName])
-
-		err := mngr.docker.ContainerStop(ctx, backuper.ID, container.StopOptions{})
+	for _, i := range []struct {
+		tag string
+		typ string
+	}{{mngr.labels.backuperName, "backup"}, {mngr.conf.RestoreTag, "restore"}, {mngr.conf.ForceTag, "force-backup"}} {
+		cntrs, err := mngr.listContainersWithLabel(ctx, i.tag, false)
 		if err != nil {
 			return err
+		}
+
+		for _, cntr := range cntrs {
+			log.Printf("Stopping '%s' %s container\n", cntr.Labels[i.tag], i.typ)
+
+			err := mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -547,42 +560,55 @@ func (mngr *ContainerManager) StopAll(ctx context.Context) error {
 }
 
 func (mngr *ContainerManager) RemoveBackuper(ctx context.Context, name string) error {
-	cntr, err := mngr.getContainerByLabelValue(ctx, mngr.labels.backuperName, name, true)
-	if err != nil {
-		return err
-	}
-
-	if cntr == nil {
-		return fmt.Errorf("backup container '%s' doesn't exist", name)
-	}
-
-	err = mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Removing '%s' backup container\n", name)
-
-	return mngr.docker.ContainerRemove(ctx, cntr.ID, container.RemoveOptions{})
-}
-
-func (mngr *ContainerManager) RemoveAll(ctx context.Context) error {
-	backupers, err := mngr.listContainersWithLabel(ctx, mngr.labels.backuperName, true)
-	if err != nil {
-		return err
-	}
-
-	for _, backuper := range backupers {
-		err = mngr.docker.ContainerStop(ctx, backuper.ID, container.StopOptions{})
+	for _, i := range []struct {
+		tag string
+		typ string
+	}{{mngr.labels.backuperName, "backup"}, {mngr.conf.RestoreTag, "restore"}, {mngr.conf.ForceTag, "force-backup"}} {
+		cntr, err := mngr.getContainerByLabelValue(ctx, i.tag, name, true)
 		if err != nil {
 			return err
 		}
 
-		log.Printf("Removing '%s' backup container\n", backuper.Labels[mngr.labels.backuperName])
+		if cntr != nil {
+			err = mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+			if err != nil {
+				return err
+			}
 
-		err = mngr.docker.ContainerRemove(ctx, backuper.ID, container.RemoveOptions{})
+			log.Printf("Removing '%s' %s container\n", name, i.typ)
+
+			err = mngr.docker.ContainerRemove(ctx, cntr.ID, container.RemoveOptions{})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (mngr *ContainerManager) RemoveAll(ctx context.Context) error {
+	for _, i := range []struct {
+		tag string
+		typ string
+	}{{mngr.labels.backuperName, "backup"}, {mngr.conf.RestoreTag, "restore"}, {mngr.conf.ForceTag, "force-backup"}} {
+		cntrs, err := mngr.listContainersWithLabel(ctx, i.tag, true)
 		if err != nil {
 			return err
+		}
+
+		for _, cntr := range cntrs {
+			err = mngr.docker.ContainerStop(ctx, cntr.ID, container.StopOptions{})
+			if err != nil {
+				return err
+			}
+
+			log.Printf("Removing '%s' %s container\n", cntr.Labels[i.tag], i.typ)
+
+			err = mngr.docker.ContainerRemove(ctx, cntr.ID, container.RemoveOptions{})
+			if err != nil {
+				return err
+			}
 		}
 	}
 
