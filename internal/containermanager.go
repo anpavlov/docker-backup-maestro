@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -57,6 +59,7 @@ type dockerApi interface {
 	ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
 	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
+	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 }
 
 type UserTemplates struct {
@@ -356,8 +359,32 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 		return err
 	}
 
+	errReaderChan := make(chan error)
+	go func() {
+		reader, err := mngr.docker.ContainerLogs(ctx, cntrId, container.LogsOptions{})
+		if err != nil {
+			errReaderChan <- err
+			return
+		}
+
+		defer reader.Close()
+
+		_, err = stdcopy.StdCopy(os.Stdout, os.Stdout, reader)
+		if err != nil {
+			errReaderChan <- err
+			return
+		}
+
+		errReaderChan <- nil
+	}()
+
 	log.Printf("wainting restore container %s to finish\n", name)
 	err = <-errChan
+	if err != nil {
+		return err
+	}
+
+	err = <-errReaderChan
 	if err != nil {
 		return err
 	}
