@@ -262,10 +262,6 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 
 			bind := fmt.Sprintf("%s:%s", hostPath, path.Join(mngr.conf.Backuper.BindToPath, dirName))
 
-			if !mngr.conf.AlwaysRw && !rw {
-				bind += ":ro"
-			}
-
 			volumes = append(volumes, bind)
 		}
 	}
@@ -274,11 +270,14 @@ func (mngr *ContainerManager) prepareBackuperConfigFor(ctx context.Context, name
 		hostPathToBind := getContainerLabel(cntr, mngr.labels.backupPath)
 		if len(hostPathToBind) != 0 {
 			bind := fmt.Sprintf("%s:%s", hostPathToBind, mngr.conf.Backuper.BindToPath)
-			if !rw {
-				bind += ":ro"
-			}
 
 			volumes = append(volumes, bind)
+		}
+	}
+
+	if !mngr.conf.AlwaysRw && !rw {
+		for i := range volumes {
+			volumes[i] = volumes[i] + ":ro"
 		}
 	}
 
