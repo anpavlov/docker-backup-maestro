@@ -360,7 +360,7 @@ func (mngr *ContainerManager) oneOffContainerFromTmpl(ctx context.Context, name 
 
 	errReaderChan := make(chan error)
 	go func() {
-		reader, err := mngr.docker.ContainerLogs(ctx, cntrId, container.LogsOptions{})
+		reader, err := mngr.docker.ContainerLogs(ctx, cntrId, container.LogsOptions{ShowStdout: true, ShowStderr: true, Follow: true})
 		if err != nil {
 			errReaderChan <- err
 			return
