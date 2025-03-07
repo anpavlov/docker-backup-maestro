@@ -112,18 +112,20 @@ func (val *BuildInfo) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 type Template struct {
-	Build       BuildInfo
-	Image       string
-	Entrypoint  ShellCommand
-	Command     ShellCommand
-	Restart     string
-	EnvFile     StringOneOrArray `yaml:"env_file"`
-	Environment StringMapOrArray
-	Volumes     []string
-	Labels      StringMapOrArray
-	Networks    []string
-	Devices     []string
-	Privileged  bool
+	Build        BuildInfo
+	Image        string
+	Entrypoint   ShellCommand
+	Command      ShellCommand
+	Restart      string
+	EnvFile      StringOneOrArray `yaml:"env_file"`
+	Environment  StringMapOrArray
+	Capabilities []string `yaml:"cap_add"`
+	SecOpt       []string `yaml:"security_opt"`
+	Volumes      []string
+	Labels       StringMapOrArray
+	Networks     []string
+	Devices      []string
+	Privileged   bool
 
 	autoRemove bool
 }
@@ -222,6 +224,14 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 		newTmpl.Privileged = true
 	}
 
+	if len(other.Capabilities) > 0 {
+		newTmpl.Capabilities = append(newTmpl.Capabilities, other.Capabilities...)
+	}
+
+	if len(other.SecOpt) > 0 {
+		newTmpl.SecOpt = append(newTmpl.SecOpt, other.SecOpt...)
+	}
+
 	return &newTmpl
 }
 
@@ -281,6 +291,8 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 		Binds:         tmpl.Volumes,
 		RestartPolicy: rst,
 		AutoRemove:    tmpl.autoRemove,
+		CapAdd:        tmpl.Capabilities,
+		SecurityOpt:   tmpl.SecOpt,
 	}
 
 	if len(tmpl.Devices) > 0 {
