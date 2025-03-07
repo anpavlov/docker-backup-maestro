@@ -214,7 +214,7 @@ func (tmpl *Template) Overlay(other *Template) *Template {
 
 	for _, k := range other.Devices {
 		if !slices.Contains(newTmpl.Devices, k) {
-			newTmpl.Networks = append(newTmpl.Devices, k)
+			newTmpl.Devices = append(newTmpl.Devices, k)
 		}
 	}
 
