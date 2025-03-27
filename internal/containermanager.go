@@ -94,7 +94,7 @@ func (mngr *ContainerManager) initBackupers(ctx context.Context) error {
 		return err
 	}
 
-	toBackups, err := mngr.listContainersWithLabel(ctx, mngr.labels.backupName, false)
+	toBackups, err := mngr.listContainersWithLabel(ctx, mngr.labels.backupName, true)
 	if err != nil {
 		return err
 	}

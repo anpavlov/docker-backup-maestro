@@ -57,9 +57,9 @@ func (mngr *ContainerManager) listContainersWithLabel(ctx context.Context, label
 }
 
 func (mngr *ContainerManager) handleDockerEvent(ctx context.Context, event events.Message) error {
-	if event.Action == events.ActionStart {
+	if event.Action == events.ActionCreate {
 		return mngr.createBackuper(ctx, event.Actor.Attributes[mngr.labels.backupName])
-	} else if event.Action == events.ActionDie {
+	} else if event.Action == events.ActionDestroy {
 		return mngr.dropBackuper(ctx, event.Actor.Attributes[mngr.labels.backupName])
 	}
 
