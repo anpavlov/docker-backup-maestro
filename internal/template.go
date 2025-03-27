@@ -307,6 +307,7 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 			device := container.DeviceMapping{
 				PathOnHost:      elems[0],
 				PathInContainer: elems[1],
+				CgroupPermissions: "rwm",
 			}
 
 			if len(elems) > 2 {
@@ -331,7 +332,7 @@ func (tmpl *Template) CreateConfig(tag string) (*BuildInfo, *container.Config, *
 		}
 
 		for _, netName := range tmpl.Networks {
-			netCfg.EndpointsConfig[netName] = nil
+			netCfg.EndpointsConfig[netName] = &network.EndpointSettings{}
 		}
 	}
 
