@@ -4,13 +4,17 @@ Automatically start stop companion containers to backup data from another contai
 
 ## How does it work
 
-docker-backup-maestro (maestro) is watching containers with specific labels. When any of them starts or stops, maestro will create and run or stop and delete companion container, using container template (compose-like) and labels from target container.
+docker-backup-maestro (maestro) is watching containers with specific labels. When any of them is created or removed, maestro will create and run or stop and delete companion container, using container template (compose-like) and labels from target container.
 
 docker-backup-maestro provides **restore** and **force-backup** cli commands (used with docker exec) that runs separate one-off containers with autoremove flag from their own templates.
 
 Typical setup assumes cron-based backup container, that runs continuously, starting backup procedure periodically.
 
 CLI commands includes some useful commands that simplifies backup containers management. Like build, pull, start, stop, create, remove, list backup containers.
+
+Note that since docker-backup-maestro runs backup container at the time target container to backup is created (even if it not run afterwards), backups will be made even if target container is never started before. This on the contrary allows to restore container data before it is run for the first time, when restoring from scratch.
+
+Also companion backup container is totally removed when target container is removed, so no logs will be left also.
 
 ## Usage with docker compose
 
