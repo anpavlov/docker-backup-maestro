@@ -1,9 +1,10 @@
-FROM golang:1.23.4-alpine3.21 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23.4-alpine3.21 AS builder
+ARG TARGETARCH
+ARG TARGETOS
 
 WORKDIR /app
 
-COPY go.mod .
-COPY go.sum .
+COPY go.mod go.sum .
 RUN go mod download
 
 COPY . .
@@ -11,7 +12,7 @@ COPY . .
 ENV GOCACHE=/root/.cache/go-build
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    go build ./cmd/docker-backup-maestro/
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ./cmd/docker-backup-maestro/
 
 FROM alpine:3.21
 
